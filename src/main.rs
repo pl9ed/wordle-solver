@@ -1,22 +1,28 @@
+mod cli;
 mod wordbank;
 mod solver;
 
-use wordbank::{get_wordbank};
+use cli::{parse_cli};
+use wordbank::{load_wordbank_from_file, load_wordbank_from_str, EMBEDDED_WORDBANK};
 use solver::{filter_candidates, build_freq_chart, score_word, recommend_guess, best_information_guess};
 use std::io;
 
 fn main() {
-    let initial_wordbank = match get_wordbank() {
-        Ok(words) => words,
-        Err(e) => {
-            eprintln!("Failed to load word bank: {}", e);
-            return;
-        }
+    let cli = parse_cli();
+    let initial_wordbank = match &cli.wordbank_path {
+        Some(path) => match load_wordbank_from_file(path) {
+            Ok(words) => words,
+            Err(e) => {
+                eprintln!("Failed to load word bank from '{path}': {e}");
+                return;
+            }
+        },
+        None => load_wordbank_from_str(EMBEDDED_WORDBANK),
     };
     let mut candidates = initial_wordbank.clone();
     println!("Loaded {} words.", candidates.len());
     if let Some(start_word) = recommend_guess(&candidates) {
-        println!("Suggested starting word: {}", start_word);
+        println!("Suggested starting word: {start_word}");
     }
     let stdin = io::stdin();
     loop {
@@ -29,10 +35,10 @@ fn main() {
             break;
         }
         if guess == "NEXT" {
-            candidates = initial_wordbank.clone();
-            println!("New game started. Loaded {} words.", candidates.len());
+            candidates.clone_from(&initial_wordbank);
+            println!("New game started. Loaded {0} words.", candidates.len());
             if let Some(start_word) = recommend_guess(&candidates) {
-                println!("Suggested starting word: {}", start_word);
+                println!("Suggested starting word: {start_word}");
             }
             continue;
         }
@@ -56,7 +62,7 @@ fn main() {
         scored_candidates.sort_by(|a, b| b.1.cmp(&a.1));
         println!("Possible candidates ({}):", scored_candidates.len());
         for (word, _) in scored_candidates.iter().take(5) {
-            println!("{}", word);
+            println!("{word}");
         }
         if scored_candidates.len() > 5 {
             println!("...and {} more", scored_candidates.len() - 5);

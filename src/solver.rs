@@ -102,6 +102,7 @@ pub fn get_feedback(guess: &str, solution: &str) -> String {
     feedback.iter().collect()
 }
 
+#[allow(clippy::cast_precision_loss)] // don't care about this
 pub fn expected_pool_size(guess: &str, candidates: &[String]) -> f64 {
     let mut pattern_counts: HashMap<String, usize> = HashMap::new();
     for solution in candidates {

@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
-use std::env;
 
 pub const EMBEDDED_WORDBANK: &str = include_str!("resources/wordbank.txt");
 
@@ -24,18 +23,3 @@ pub fn load_wordbank_from_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<String
     }
     Ok(words)
 }
-
-pub fn get_wordbank() -> io::Result<Vec<String>> {
-    let mut args = env::args().skip(1);
-    while let Some(arg) = args.next() {
-        if arg == "-i" {
-            if let Some(path) = args.next() {
-                return load_wordbank_from_file(path);
-            } else {
-                return Err(io::Error::new(io::ErrorKind::InvalidInput, "Missing path after -i"));
-            }
-        }
-    }
-    Ok(load_wordbank_from_str(EMBEDDED_WORDBANK))
-}
-
