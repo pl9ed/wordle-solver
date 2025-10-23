@@ -1,26 +1,54 @@
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Feedback {
+    Match,        // Green ('G') - correct letter in correct position
+    PartialMatch, // Yellow ('Y') - correct letter in wrong position
+    NoMatch,      // Gray ('X') - letter not in word
+}
+
+impl Feedback {
+    /// Convert this feedback to its character representation
+    #[allow(dead_code)]
+    pub const fn as_char(self) -> char {
+        match self {
+            Self::Match => 'G',
+            Self::PartialMatch => 'Y',
+            Self::NoMatch => 'X',
+        }
+    }
+
+    /// Parse a character into a Feedback variant
+    pub const fn from_char(c: char) -> Option<Self> {
+        match c {
+            'G' => Some(Self::Match),
+            'Y' => Some(Self::PartialMatch),
+            'X' => Some(Self::NoMatch),
+            _ => None,
+        }
+    }
+}
+
 pub fn filter_candidates(
     candidates: &[String],
     guess: &str,
-    feedback: &str,
+    feedback: &[Feedback],
 ) -> Vec<String> {
     let guess_chars: Vec<char> = guess.chars().collect();
-    let feedback_chars: Vec<char> = feedback.chars().collect();
-    
+
     let mut filtered = Vec::new();
     'word: for word in candidates {
         let word_chars: Vec<char> = word.chars().collect();
-        
-        // First pass: check greens
-        for (i, (&g, &f)) in guess_chars.iter().zip(feedback_chars.iter()).enumerate() {
-            if f == 'G' && word_chars[i] != g {
+
+        // First pass: check matches (green)
+        for (i, (&g, &f)) in guess_chars.iter().zip(feedback.iter()).enumerate() {
+            if f == Feedback::Match && word_chars[i] != g {
                 continue 'word;
             }
         }
-        // Second pass: check yellows
-        for (i, (&g, &f)) in guess_chars.iter().zip(feedback_chars.iter()).enumerate() {
-            if f == 'Y' {
+        // Second pass: check partial matches (yellow)
+        for (i, (&g, &f)) in guess_chars.iter().zip(feedback.iter()).enumerate() {
+            if f == Feedback::PartialMatch {
                 if word_chars[i] == g {
                     continue 'word;
                 }
@@ -29,11 +57,11 @@ pub fn filter_candidates(
                 }
             }
         }
-        // Third pass: check greys (X)
-        for (i, (&g, &f)) in guess_chars.iter().zip(feedback_chars.iter()).enumerate() {
-            if f == 'X' {
-                let elsewhere = guess_chars.iter().zip(feedback_chars.iter()).any(|(&gc, &fc)| {
-                    gc == g && (fc == 'G' || fc == 'Y')
+        // Third pass: check no matches (gray)
+        for (i, (&g, &f)) in guess_chars.iter().zip(feedback.iter()).enumerate() {
+            if f == Feedback::NoMatch {
+                let elsewhere = guess_chars.iter().zip(feedback.iter()).any(|(&gc, &fc)| {
+                    gc == g && (fc == Feedback::Match || fc == Feedback::PartialMatch)
                 });
                 if elsewhere {
                     // Must not be at this position
@@ -53,31 +81,31 @@ pub fn filter_candidates(
     filtered
 }
 
-pub fn get_feedback(guess: &str, solution: &str) -> String {
-    let mut feedback = ['X'; 5];
+pub fn get_feedback(guess: &str, solution: &str) -> Vec<Feedback> {
+    let mut feedback = [Feedback::NoMatch; 5];
     let mut solution_chars: Vec<char> = solution.chars().collect();
     let guess_chars: Vec<char> = guess.chars().collect();
-    // First pass: greens
+    // First pass: matches (green)
     for i in 0..5 {
         if guess_chars[i] == solution_chars[i] {
-            feedback[i] = 'G';
+            feedback[i] = Feedback::Match;
             solution_chars[i] = '_'; // Mark as used
         }
     }
-    // Second pass: yellows
+    // Second pass: partial matches (yellow)
     for i in 0..5 {
-        if feedback[i] == 'G' { continue; }
+        if feedback[i] == Feedback::Match { continue; }
         if let Some(pos) = solution_chars.iter().position(|&c| c == guess_chars[i]) {
-            feedback[i] = 'Y';
+            feedback[i] = Feedback::PartialMatch;
             solution_chars[pos] = '_'; // Mark as used
         }
     }
-    feedback.iter().collect()
+    feedback.to_vec()
 }
 
 #[allow(clippy::cast_precision_loss)] // don't care about this
 pub fn expected_pool_size(guess: &str, candidates: &[String]) -> f64 {
-    let mut pattern_counts: HashMap<String, usize> = HashMap::new();
+    let mut pattern_counts: HashMap<Vec<Feedback>, usize> = HashMap::new();
     for solution in candidates {
         let pattern = get_feedback(guess, solution);
         *pattern_counts.entry(pattern).or_insert(0) += 1;

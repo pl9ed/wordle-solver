@@ -1,5 +1,5 @@
 use crate::wordbank::{get_wordle_start_path, read_starting_words, write_starting_words};
-use crate::solver::{filter_candidates, best_information_guess, compute_best_starting_words};
+use crate::solver::{filter_candidates, best_information_guess, compute_best_starting_words, Feedback};
 use std::io::BufRead;
 use std::path::PathBuf;
 
@@ -119,14 +119,21 @@ fn read_guess<R: BufRead>(reader: &mut R) -> GuessInput {
     }
 }
 
-fn read_feedback<R: BufRead>(reader: &mut R) -> Option<String> {
+fn read_feedback<R: BufRead>(reader: &mut R) -> Option<Vec<Feedback>> {
     println!("Enter feedback (G=green, Y=yellow, X=gray, e.g. GYXXG):");
     let mut input = String::new();
     reader.read_line(&mut input).unwrap();
     let input = input.trim().to_uppercase();
 
     if is_valid_feedback(&input) {
-        Some(input)
+        let feedback: Option<Vec<Feedback>> = input.chars()
+            .map(Feedback::from_char)
+            .collect();
+        
+        if feedback.is_none() {
+            println!("Invalid feedback. Please enter 5 characters using G, Y, or X.");
+        }
+        feedback
     } else {
         println!("Invalid feedback. Please enter 5 characters using G, Y, or X.");
         None
