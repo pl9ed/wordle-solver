@@ -173,3 +173,198 @@ fn display_recommendation(guess: &str, score: f64, is_candidate: bool) {
     println!("Recommended guess: {guess} (expected pool size {score:.2}) [{category}]");
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_game_loop_immediate_exit() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let input = "exit\n";
+        let reader = Cursor::new(input);
+
+        // Should not panic and should exit gracefully
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_invalid_guess_then_exit() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let input = "abc\nexit\n";
+        let reader = Cursor::new(input);
+
+        // Should handle invalid input and then exit
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_new_game_command() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let input = "next\nexit\n";
+        let reader = Cursor::new(input);
+
+        // Should start new game and then exit
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_valid_guess_invalid_feedback() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let input = "CRANE\nINVALID\nexit\n";
+        let reader = Cursor::new(input);
+
+        // Should reject invalid feedback and continue
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_valid_guess_short_feedback() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let input = "CRANE\nGGG\nexit\n";
+        let reader = Cursor::new(input);
+
+        // Should reject feedback that's not 5 characters
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_complete_game_win() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let input = "CRANE\nGGGGG\n";
+        let reader = Cursor::new(input);
+
+        // Should find the solution and exit
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_narrowing_down() {
+        let wordbank = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+            "STARE".to_string()
+        ];
+        // First guess eliminates some candidates, second guess finds solution
+        let input = "CRANE\nXXXXX\nSLATE\nGGGGG\n";
+        let reader = Cursor::new(input);
+
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_no_candidates_remain() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
+        // Give feedback that eliminates all candidates
+        let input = "CRANE\nXXXXX\nSLATE\nXXXXX\n";
+        let reader = Cursor::new(input);
+
+        // Should detect no solution and exit
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_case_insensitive_guess() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
+        let input = "crane\nGGGGG\n";
+        let reader = Cursor::new(input);
+
+        // Should accept lowercase and convert to uppercase
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_case_insensitive_feedback() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
+        let input = "CRANE\nggggg\n";
+        let reader = Cursor::new(input);
+
+        // Should accept lowercase feedback
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_mixed_feedback() {
+        let wordbank = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+            "STARE".to_string(),
+            "SPARE".to_string()
+        ];
+        // Give mixed feedback with greens, yellows, and grays
+        let input = "CRANE\nXYGXX\nSLATE\nGGGGG\n";
+        let reader = Cursor::new(input);
+
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_multiple_games() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        // Play one game, start new game, then exit
+        let input = "CRANE\nGGGGG\nnext\nSLATE\nGGGGG\n";
+        let reader = Cursor::new(input);
+
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_with_whitespace_in_input() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
+        let input = "  CRANE  \n  GGGGG  \n";
+        let reader = Cursor::new(input);
+
+        // Should trim whitespace from input
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_six_letter_word_rejected() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
+        let input = "CRANES\nexit\n";
+        let reader = Cursor::new(input);
+
+        // Should reject word that's too long
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_four_letter_word_rejected() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
+        let input = "CRAN\nexit\n";
+        let reader = Cursor::new(input);
+
+        // Should reject word that's too short
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_word_with_numbers_rejected() {
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
+        let input = "CR4NE\nexit\n";
+        let reader = Cursor::new(input);
+
+        // Should reject word with non-alphabetic characters
+        game_loop(&wordbank, reader);
+    }
+
+    #[test]
+    fn test_game_loop_progressive_narrowing() {
+        let wordbank = vec![
+            "AAAAA".to_string(),
+            "BBBBB".to_string(),
+            "CCCCC".to_string(),
+            "DDDDD".to_string(),
+            "EEEEE".to_string(),
+            "FFFFF".to_string()
+        ];
+        // Progressively narrow down candidates
+        let input = "AAAAA\nXXXXX\nBBBBB\nXXXXX\nCCCCC\nGGGGG\n";
+        let reader = Cursor::new(input);
+
+        game_loop(&wordbank, reader);
+    }
+}
+

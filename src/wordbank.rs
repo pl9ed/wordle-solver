@@ -77,3 +77,290 @@ pub fn write_starting_words(path: &Path, words: &[String]) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_wordbank_from_str_valid() {
+        let data = "crane\nslate\nraise\nstare\narise";
+        let words = load_wordbank_from_str(data);
+
+        assert_eq!(words.len(), 5);
+        assert_eq!(words, vec!["CRANE", "SLATE", "RAISE", "STARE", "ARISE"]);
+    }
+
+    #[test]
+    fn test_load_wordbank_from_str_filters_invalid() {
+        let data = "crane\nslate\ntoo\ntoolong\n12345\nraise";
+        let words = load_wordbank_from_str(data);
+
+        // Should only include valid 5-letter words
+        assert_eq!(words.len(), 3);
+        assert_eq!(words, vec!["CRANE", "SLATE", "RAISE"]);
+    }
+
+    #[test]
+    fn test_load_wordbank_from_str_trims_whitespace() {
+        let data = "  crane  \n slate\t\n\nraise  ";
+        let words = load_wordbank_from_str(data);
+
+        assert_eq!(words.len(), 3);
+        assert_eq!(words, vec!["CRANE", "SLATE", "RAISE"]);
+    }
+
+    #[test]
+    fn test_load_wordbank_from_str_uppercase_conversion() {
+        let data = "crane\nSlAtE\nRAISE\nmixed";
+        let words = load_wordbank_from_str(data);
+
+        assert_eq!(words.len(), 4);
+        assert!(words.iter().all(|w| w.chars().all(|c| c.is_uppercase())));
+    }
+
+    #[test]
+    fn test_load_wordbank_from_str_empty() {
+        let data = "";
+        let words = load_wordbank_from_str(data);
+
+        assert_eq!(words.len(), 0);
+    }
+
+    #[test]
+    fn test_load_wordbank_from_str_filters_non_alphabetic() {
+        let data = "crane\nsl@te\nra1se\nstare";
+        let words = load_wordbank_from_str(data);
+
+        // Should filter out words with non-alphabetic characters
+        assert_eq!(words.len(), 2);
+        assert_eq!(words, vec!["CRANE", "STARE"]);
+    }
+
+    #[test]
+    fn test_load_wordbank_from_file_valid() {
+        // Create a temporary file
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_wordbank.txt");
+
+        {
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "crane").unwrap();
+            writeln!(file, "slate").unwrap();
+            writeln!(file, "raise").unwrap();
+        }
+
+        let words = load_wordbank_from_file(&file_path).unwrap();
+
+        assert_eq!(words.len(), 3);
+        assert_eq!(words, vec!["CRANE", "SLATE", "RAISE"]);
+
+        // Cleanup
+        std::fs::remove_file(&file_path).unwrap();
+    }
+
+    #[test]
+    fn test_load_wordbank_from_file_nonexistent() {
+        let result = load_wordbank_from_file("nonexistent_file.txt");
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_wordbank_from_file_filters_invalid() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_wordbank_invalid.txt");
+
+        {
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "crane").unwrap();
+            writeln!(file, "ab").unwrap();
+            writeln!(file, "toolong").unwrap();
+            writeln!(file, "slate").unwrap();
+        }
+
+        let words = load_wordbank_from_file(&file_path).unwrap();
+
+        assert_eq!(words.len(), 2);
+        assert_eq!(words, vec!["CRANE", "SLATE"]);
+
+        std::fs::remove_file(&file_path).unwrap();
+    }
+
+    #[test]
+    fn test_read_starting_words_valid() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_wordle_start.txt");
+
+        {
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "crane").unwrap();
+            writeln!(file, "slate").unwrap();
+            writeln!(file, "raise").unwrap();
+            writeln!(file, "stare").unwrap();
+            writeln!(file, "arise").unwrap();
+        }
+
+        let words = read_starting_words(&file_path);
+
+        assert!(words.is_some());
+        let words = words.unwrap();
+        assert_eq!(words.len(), 5);
+        assert_eq!(words, vec!["CRANE", "SLATE", "RAISE", "STARE", "ARISE"]);
+
+        std::fs::remove_file(&file_path).unwrap();
+    }
+
+    #[test]
+    fn test_read_starting_words_insufficient() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_wordle_start_short.txt");
+
+        {
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "crane").unwrap();
+            writeln!(file, "slate").unwrap();
+        }
+
+        let words = read_starting_words(&file_path);
+
+        // Should return None if less than 5 words
+        assert!(words.is_none());
+
+        std::fs::remove_file(&file_path).unwrap();
+    }
+
+    #[test]
+    fn test_read_starting_words_nonexistent() {
+        let file_path = PathBuf::from("nonexistent_start_file.txt");
+        let words = read_starting_words(&file_path);
+
+        assert!(words.is_none());
+    }
+
+    #[test]
+    fn test_read_starting_words_takes_only_five() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_wordle_start_long.txt");
+
+        {
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "crane").unwrap();
+            writeln!(file, "slate").unwrap();
+            writeln!(file, "raise").unwrap();
+            writeln!(file, "stare").unwrap();
+            writeln!(file, "arise").unwrap();
+            writeln!(file, "irate").unwrap();
+            writeln!(file, "atone").unwrap();
+        }
+
+        let words = read_starting_words(&file_path);
+
+        assert!(words.is_some());
+        let words = words.unwrap();
+        assert_eq!(words.len(), 5);
+        // Should only take first 5
+        assert_eq!(words, vec!["CRANE", "SLATE", "RAISE", "STARE", "ARISE"]);
+
+        std::fs::remove_file(&file_path).unwrap();
+    }
+
+    #[test]
+    fn test_write_starting_words() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_write_start.txt");
+
+        let words = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+            "STARE".to_string(),
+            "ARISE".to_string()
+        ];
+
+        write_starting_words(&file_path, &words);
+
+        // Verify the file was written correctly
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        assert_eq!(lines.len(), 5);
+        assert_eq!(lines, vec!["CRANE", "SLATE", "RAISE", "STARE", "ARISE"]);
+
+        std::fs::remove_file(&file_path).unwrap();
+    }
+
+    #[test]
+    fn test_write_starting_words_more_than_five() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_write_start_long.txt");
+
+        let words = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+            "STARE".to_string(),
+            "ARISE".to_string(),
+            "IRATE".to_string(),
+            "ATONE".to_string()
+        ];
+
+        write_starting_words(&file_path, &words);
+
+        // Should only write first 5
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        assert_eq!(lines.len(), 5);
+
+        std::fs::remove_file(&file_path).unwrap();
+    }
+
+    #[test]
+    fn test_write_then_read_starting_words_roundtrip() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_roundtrip.txt");
+
+        let original_words = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+            "STARE".to_string(),
+            "ARISE".to_string()
+        ];
+
+        write_starting_words(&file_path, &original_words);
+        let read_words = read_starting_words(&file_path).unwrap();
+
+        assert_eq!(original_words, read_words);
+
+        std::fs::remove_file(&file_path).unwrap();
+    }
+
+    #[test]
+    fn test_get_wordle_start_path() {
+        let path = get_wordle_start_path();
+
+        // Should return Some path
+        assert!(path.is_some());
+
+        if let Some(path) = path {
+            // Should end with .wordle_start
+            assert!(path.to_string_lossy().ends_with(".wordle_start"));
+        }
+    }
+
+    #[test]
+    fn test_embedded_wordbank_not_empty() {
+        assert!(!EMBEDDED_WORDBANK.is_empty());
+
+        // Test that embedded wordbank can be loaded
+        let words = load_wordbank_from_str(EMBEDDED_WORDBANK);
+        assert!(words.len() > 0);
+
+        // All words should be 5 letters and uppercase
+        assert!(words.iter().all(|w| w.len() == 5));
+        assert!(words.iter().all(|w| w.chars().all(|c| c.is_uppercase())));
+    }
+}
+
