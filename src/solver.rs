@@ -9,6 +9,16 @@ pub enum Feedback {
 
 impl Feedback {
     /// Convert this feedback to its character representation
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use wordle_solver::Feedback;
+    ///
+    /// assert_eq!(Feedback::Match.as_char(), 'G');
+    /// assert_eq!(Feedback::PartialMatch.as_char(), 'Y');
+    /// assert_eq!(Feedback::NoMatch.as_char(), 'X');
+    /// ```
     #[allow(dead_code)]
     #[must_use]
     pub const fn as_char(self) -> char {
@@ -20,6 +30,17 @@ impl Feedback {
     }
 
     /// Parse a character into a Feedback variant
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use wordle_solver::Feedback;
+    ///
+    /// assert_eq!(Feedback::from_char('G'), Some(Feedback::Match));
+    /// assert_eq!(Feedback::from_char('Y'), Some(Feedback::PartialMatch));
+    /// assert_eq!(Feedback::from_char('X'), Some(Feedback::NoMatch));
+    /// assert_eq!(Feedback::from_char('Z'), None);
+    /// ```
     #[must_use]
     pub const fn from_char(c: char) -> Option<Self> {
         match c {
@@ -31,6 +52,22 @@ impl Feedback {
     }
 }
 
+/// Filters candidates based on feedback from a guess.
+///
+/// # Examples
+///
+/// ```
+/// use wordle_solver::{filter_candidates, get_feedback, Feedback};
+///
+/// let candidates = vec!["CRANE".to_string(), "BRAIN".to_string(), "STAIN".to_string()];
+/// // Simulate guessing CRANE when answer is BRAIN
+/// let feedback = get_feedback("CRANE", "BRAIN");
+/// let filtered = filter_candidates(&candidates, "CRANE", &feedback);
+///
+/// // CRANE is filtered out, BRAIN remains
+/// assert!(filtered.contains(&"BRAIN".to_string()));
+/// assert!(!filtered.contains(&"CRANE".to_string()));
+/// ```
 #[must_use]
 pub fn filter_candidates(candidates: &[String], guess: &str, feedback: &[Feedback]) -> Vec<String> {
     let guess_chars: Vec<char> = guess.chars().collect();
@@ -80,6 +117,23 @@ pub fn filter_candidates(candidates: &[String], guess: &str, feedback: &[Feedbac
     filtered
 }
 
+/// Generates feedback for a guess compared to the solution.
+///
+/// Returns a vector of 5 feedback values indicating how each letter in the guess
+/// matches the solution (green for correct position, yellow for wrong position, gray for not in word).
+///
+/// # Examples
+///
+/// ```
+/// use wordle_solver::{get_feedback, Feedback};
+///
+/// let feedback = get_feedback("CRANE", "CRANE");
+/// assert_eq!(feedback, vec![Feedback::Match; 5]);
+///
+/// let feedback = get_feedback("CRANE", "BRAIN");
+/// assert_eq!(feedback[0], Feedback::NoMatch);  // C not in BRAIN
+/// assert_eq!(feedback[1], Feedback::Match);     // R correct position
+/// ```
 #[must_use]
 pub fn get_feedback(guess: &str, solution: &str) -> Vec<Feedback> {
     let mut feedback = [Feedback::NoMatch; 5];

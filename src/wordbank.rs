@@ -28,6 +28,22 @@ pub fn load_wordbank(wordbank_path: Option<String>) -> Vec<String> {
     }
 }
 
+/// Loads a wordbank from a string, filtering for valid 5-letter words.
+///
+/// # Examples
+///
+/// ```
+/// use wordle_solver::load_wordbank_from_str;
+///
+/// let data = "crane\nslate\nraise";
+/// let wordbank = load_wordbank_from_str(data);
+/// assert_eq!(wordbank, vec!["CRANE", "SLATE", "RAISE"]);
+///
+/// // Filters out invalid words
+/// let data = "abc\ncrane\ntoolong";
+/// let wordbank = load_wordbank_from_str(data);
+/// assert_eq!(wordbank, vec!["CRANE"]);
+/// ```
 #[must_use]
 pub fn load_wordbank_from_str(data: &str) -> Vec<String> {
     data.lines()
