@@ -36,11 +36,17 @@ macro_rules! info_log {
     };
 }
 
+#[cfg(not(debug_assertions))]
 macro_rules! info_log {
     ($($arg:tt)*) => {{}};
 }
 
 const MAX_GUESSES: usize = 6;
+const WORD_LENGTH: usize = 5;
+const MAX_CANDIDATES_DISPLAY: usize = 10;
+const EVENT_POLL_TIMEOUT_MS: u64 = 100;
+const COMPUTING_POLL_TIMEOUT_MS: u64 = 10;
+const ROW_SPACING: u16 = 2;
 
 #[derive(Clone, Copy, PartialEq)]
 enum LetterState {
@@ -59,8 +65,36 @@ struct GuessRow {
 impl GuessRow {
     fn new() -> Self {
         Self {
-            letters: [' '; 5],
-            states: [LetterState::Empty; 5],
+            letters: [' '; WORD_LENGTH],
+            states: [LetterState::Empty; WORD_LENGTH],
+        }
+    }
+
+    fn from_guess(guess: &str) -> Self {
+        let mut row = Self::new();
+        for (i, ch) in guess.chars().enumerate().take(WORD_LENGTH) {
+            row.letters[i] = ch;
+            row.states[i] = LetterState::Entered;
+        }
+        row
+    }
+}
+
+impl LetterState {
+    fn colors(&self) -> (Color, Color) {
+        match self {
+            Self::Empty | Self::Entered => (Color::DarkGray, Color::White),
+            Self::Match => (Color::Green, Color::Black),
+            Self::PartialMatch => (Color::Yellow, Color::Black),
+            Self::NoMatch => (Color::Gray, Color::White),
+        }
+    }
+
+    fn to_feedback(self) -> Feedback {
+        match self {
+            Self::Match => Feedback::Match,
+            Self::PartialMatch => Feedback::PartialMatch,
+            Self::NoMatch | Self::Empty | Self::Entered => Feedback::NoMatch,
         }
     }
 }
@@ -124,28 +158,18 @@ impl TuiInterface {
     }
 
     fn draw(&mut self) -> Result<(), io::Error> {
-        let guesses = &self.guesses;
-        let current_input = &self.current_input;
-        let state = &self.state;
-        let candidates_display = &self.candidates_display;
-        let recommendation = &self.recommendation;
-        let starting_words = &self.starting_words;
-        let message = &self.message;
-        let error_message = &self.error_message;
-        let status = &self.status;
-
         self.terminal.draw(|f| {
             Self::render_static(
                 f,
-                guesses,
-                current_input,
-                state,
-                candidates_display,
-                recommendation.as_ref(),
-                starting_words,
-                message,
-                error_message,
-                status,
+                &self.guesses,
+                &self.current_input,
+                &self.state,
+                &self.candidates_display,
+                self.recommendation.as_ref(),
+                &self.starting_words,
+                &self.message,
+                &self.error_message,
+                &self.status,
             );
         })?;
         Ok(())
@@ -239,25 +263,15 @@ impl TuiInterface {
         state: &TuiState,
         guesses_len: usize,
     ) {
-        let y = area.y + (row_index as u16 * 2); // 2 lines per row instead of 3
+        let y = area.y + (row_index as u16 * ROW_SPACING);
         if y >= area.y + area.height {
             return;
         }
 
         let mut spans = vec![Span::raw("  ")];
-        for i in 0..5 {
-            let (bg_color, fg_color) = match guess.states[i] {
-                LetterState::Empty | LetterState::Entered => (Color::DarkGray, Color::White),
-                LetterState::Match => (Color::Green, Color::Black),
-                LetterState::PartialMatch => (Color::Yellow, Color::Black),
-                LetterState::NoMatch => (Color::Gray, Color::White),
-            };
-
-            let letter = if guess.letters[i] == ' ' {
-                ' '
-            } else {
-                guess.letters[i]
-            };
+        for i in 0..WORD_LENGTH {
+            let (bg_color, fg_color) = guess.states[i].colors();
+            let letter = guess.letters[i];
 
             spans.push(Span::styled(
                 format!(" {letter} "),
@@ -276,6 +290,10 @@ impl TuiInterface {
             )));
         }
 
+        Self::render_line(f, area, y, spans);
+    }
+
+    fn render_line(f: &mut Frame, area: Rect, y: u16, spans: Vec<Span>) {
         let line = Line::from(spans);
         let paragraph = Paragraph::new(line);
         f.render_widget(
@@ -291,13 +309,13 @@ impl TuiInterface {
 
     #[allow(clippy::cast_possible_truncation)]
     fn render_current_input(f: &mut Frame, row_index: usize, area: Rect, current_input: &str) {
-        let y = area.y + (row_index as u16 * 2); // 2 lines per row instead of 3
+        let y = area.y + (row_index as u16 * ROW_SPACING);
         if y >= area.y + area.height {
             return;
         }
 
         let mut spans = vec![Span::raw("  ")];
-        for i in 0..5 {
+        for i in 0..WORD_LENGTH {
             let letter = current_input.chars().nth(i).unwrap_or(' ');
             spans.push(Span::styled(
                 format!(" {letter} "),
@@ -306,17 +324,7 @@ impl TuiInterface {
             spans.push(Span::raw(" "));
         }
 
-        let line = Line::from(spans);
-        let paragraph = Paragraph::new(line);
-        f.render_widget(
-            paragraph,
-            Rect {
-                x: area.x,
-                y,
-                width: area.width,
-                height: 1,
-            },
-        );
+        Self::render_line(f, area, y, spans);
     }
 
     fn render_info(
@@ -372,13 +380,13 @@ impl TuiInterface {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             )]));
-            for word in candidates_display.iter().take(10) {
+            for word in candidates_display.iter().take(MAX_CANDIDATES_DISPLAY) {
                 lines.push(Line::from(format!("  {word}")));
             }
-            if candidates_display.len() > 10 {
+            if candidates_display.len() > MAX_CANDIDATES_DISPLAY {
                 lines.push(Line::from(format!(
                     "  ... and {} more",
-                    candidates_display.len() - 10
+                    candidates_display.len() - MAX_CANDIDATES_DISPLAY
                 )));
             }
             lines.push(Line::from(""));
@@ -442,7 +450,7 @@ impl TuiInterface {
         if matches!(self.state, TuiState::Computing) {
             debug_log!("handle_input() - In Computing state, using non-blocking poll");
             // Check if there's an event available without blocking
-            if event::poll(std::time::Duration::from_millis(10))?
+            if event::poll(std::time::Duration::from_millis(COMPUTING_POLL_TIMEOUT_MS))?
                 && let Event::Key(_) = event::read()?
             {
                 debug_log!("handle_input() - Ignoring key during Computing state");
@@ -454,7 +462,7 @@ impl TuiInterface {
         // For all other states, use blocking read to ensure we only get one event
 
         // Poll with a timeout to check if events are available
-        let poll_result = event::poll(std::time::Duration::from_millis(100))?;
+        let poll_result = event::poll(std::time::Duration::from_millis(EVENT_POLL_TIMEOUT_MS))?;
 
         if !poll_result {
             // No event available, return None to continue the loop
@@ -606,13 +614,8 @@ impl TuiInterface {
 
     fn handle_feedback_input(&mut self, key: KeyEvent) {
         if let TuiState::MarkingFeedback { marking_index } = self.state {
-            let last_guess = self.guesses.last_mut().unwrap();
-
             // Ignore inputs with Alt or Control modifiers to prevent alt-tab issues
-            let has_alt = key.modifiers.contains(event::KeyModifiers::ALT);
-            let has_ctrl = key.modifiers.contains(event::KeyModifiers::CONTROL);
-
-            if has_alt || has_ctrl {
+            if Self::has_modifier_keys(&key) {
                 debug_log!(
                     "handle_feedback_input() - Ignoring input with modifier: {:?}",
                     key.modifiers
@@ -620,36 +623,20 @@ impl TuiInterface {
                 return;
             }
 
+            let last_guess = self.guesses.last_mut().unwrap();
+
             match key.code {
                 KeyCode::Char('g' | 'G') => {
                     last_guess.states[marking_index] = LetterState::Match;
-                    if marking_index < 4 {
-                        self.state = TuiState::MarkingFeedback {
-                            marking_index: marking_index + 1,
-                        };
-                    } else {
-                        self.state = TuiState::WaitingForNext;
-                    }
+                    self.advance_feedback_marking(marking_index);
                 }
                 KeyCode::Char('y' | 'Y') => {
                     last_guess.states[marking_index] = LetterState::PartialMatch;
-                    if marking_index < 4 {
-                        self.state = TuiState::MarkingFeedback {
-                            marking_index: marking_index + 1,
-                        };
-                    } else {
-                        self.state = TuiState::WaitingForNext;
-                    }
+                    self.advance_feedback_marking(marking_index);
                 }
                 KeyCode::Char('x' | 'X') => {
                     last_guess.states[marking_index] = LetterState::NoMatch;
-                    if marking_index < 4 {
-                        self.state = TuiState::MarkingFeedback {
-                            marking_index: marking_index + 1,
-                        };
-                    } else {
-                        self.state = TuiState::WaitingForNext;
-                    }
+                    self.advance_feedback_marking(marking_index);
                 }
                 KeyCode::Backspace if marking_index > 0 => {
                     // Reset the state of the previous letter before going back
@@ -659,24 +646,15 @@ impl TuiInterface {
                     };
                 }
                 KeyCode::Char(c) if c.is_ascii_alphabetic() => {
-                    // Reject alphabetic characters that aren't G, Y, or X
-                    self.error_message = format!(
+                    self.set_feedback_error(&format!(
                         "Invalid feedback! Use G (green), Y (yellow), or X (gray). ('{}' is not valid)",
                         c.to_ascii_uppercase()
-                    );
-                    debug_log!(
-                        "handle_feedback_input() - Rejecting invalid feedback character: '{}'",
-                        c
-                    );
+                    ));
                 }
                 KeyCode::Char(c) => {
-                    // Reject non-alphabetic characters
-                    self.error_message =
-                        format!("Only letters G, Y, or X are allowed! ('{c}' is not valid)");
-                    debug_log!(
-                        "handle_feedback_input() - Rejecting non-alphabetic character: '{}'",
-                        c
-                    );
+                    self.set_feedback_error(&format!(
+                        "Only letters G, Y, or X are allowed! ('{c}' is not valid)"
+                    ));
                 }
                 _ => {
                     debug_log!(
@@ -686,6 +664,26 @@ impl TuiInterface {
                 }
             }
         }
+    }
+
+    fn has_modifier_keys(key: &KeyEvent) -> bool {
+        key.modifiers.contains(event::KeyModifiers::ALT)
+            || key.modifiers.contains(event::KeyModifiers::CONTROL)
+    }
+
+    fn advance_feedback_marking(&mut self, current_index: usize) {
+        if current_index < WORD_LENGTH - 1 {
+            self.state = TuiState::MarkingFeedback {
+                marking_index: current_index + 1,
+            };
+        } else {
+            self.state = TuiState::WaitingForNext;
+        }
+    }
+
+    fn set_feedback_error(&mut self, message: &str) {
+        self.error_message = message.to_string();
+        debug_log!("handle_feedback_input() - {}", message);
     }
 
     fn handle_waiting_input(&mut self, key: KeyEvent) -> Option<UserAction> {
@@ -706,15 +704,20 @@ impl TuiInterface {
         let feedback: Vec<Feedback> = last_guess
             .states
             .iter()
-            .map(|letter_state| match letter_state {
-                LetterState::Match => Feedback::Match,
-                LetterState::PartialMatch => Feedback::PartialMatch,
-                LetterState::NoMatch | LetterState::Empty | LetterState::Entered => {
-                    Feedback::NoMatch
-                }
-            })
+            .copied()
+            .map(LetterState::to_feedback)
             .collect();
         Some(feedback)
+    }
+
+    fn wait_for_user_input(&mut self) {
+        let _ = self.draw();
+        loop {
+            if let Ok(Some(_)) = self.handle_input() {
+                break;
+            }
+            let _ = self.draw();
+        }
     }
 }
 
@@ -830,15 +833,7 @@ impl GameInterface for TuiInterface {
         };
         self.message = "No candidates remain. Check your inputs.".to_string();
         self.status = "Error: No valid candidates found".to_string();
-        let _ = self.draw();
-
-        // Wait for user input before continuing
-        loop {
-            if let Ok(Some(_)) = self.handle_input() {
-                break;
-            }
-            let _ = self.draw();
-        }
+        self.wait_for_user_input();
     }
 
     fn display_solution_found(&mut self, solution: &str) {
@@ -847,16 +842,9 @@ impl GameInterface for TuiInterface {
         };
         self.message = format!("✓ Solution found: {solution}");
         self.status = format!("Game Over - Solution: {solution}");
-        let _ = self.draw();
-
-        // Wait for user input before continuing
-        loop {
-            if let Ok(Some(_)) = self.handle_input() {
-                break;
-            }
-            let _ = self.draw();
-        }
+        self.wait_for_user_input();
     }
+
 
     fn display_exit_message(&mut self) {
         self.message = "Exiting...".to_string();
@@ -886,12 +874,7 @@ impl Drop for TuiInterface {
 // Extension trait to add guess recording
 impl TuiInterface {
     pub fn record_guess(&mut self, guess: &str) {
-        let mut row = GuessRow::new();
-        for (i, ch) in guess.chars().enumerate().take(5) {
-            row.letters[i] = ch;
-            row.states[i] = LetterState::Entered;
-        }
-        self.guesses.push(row);
+        self.guesses.push(GuessRow::from_guess(guess));
     }
 }
 
