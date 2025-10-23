@@ -1,0 +1,21 @@
+# Rust build and dependency files
+/target/
+
+# JetBrains IDE (IntelliJ, CLion, RustRover) project files
+.idea/
+*.iml
+
+# VS Code project files
+.vscode/
+
+# By-products and logs
+*.log
+*.tmp
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Other common Rust artifacts
+**/*.rmeta
+**/*.d
