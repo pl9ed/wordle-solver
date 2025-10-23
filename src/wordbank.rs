@@ -8,6 +8,7 @@ fn is_valid_word(word: &str) -> bool {
     word.len() == 5 && word.chars().all(|c| c.is_ascii_alphabetic())
 }
 
+#[must_use]
 pub fn load_wordbank(wordbank_path: Option<String>) -> Vec<String> {
     if let Some(path) = wordbank_path {
         match load_wordbank_from_file(&path) {
@@ -27,6 +28,7 @@ pub fn load_wordbank(wordbank_path: Option<String>) -> Vec<String> {
     }
 }
 
+#[must_use]
 pub fn load_wordbank_from_str(data: &str) -> Vec<String> {
     data.lines()
         .map(|line| line.trim().to_uppercase())
@@ -34,6 +36,8 @@ pub fn load_wordbank_from_str(data: &str) -> Vec<String> {
         .collect()
 }
 
+/// # Errors
+/// Returns an error if the file cannot be read or accessed.
 pub fn load_wordbank_from_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<String>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
@@ -47,6 +51,7 @@ pub fn load_wordbank_from_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<String
     Ok(words)
 }
 
+#[must_use]
 pub fn get_wordle_start_path() -> Option<PathBuf> {
     dirs::home_dir().map(|mut path| {
         path.push(".wordle_start");
@@ -57,7 +62,8 @@ pub fn get_wordle_start_path() -> Option<PathBuf> {
 pub fn read_starting_words(path: &Path) -> Option<Vec<String>> {
     if let Ok(file) = File::open(path) {
         let reader = BufReader::new(file);
-        let words: Vec<String> = reader.lines()
+        let words: Vec<String> = reader
+            .lines()
             .map_while(Result::ok)
             .map(|w| w.trim().to_uppercase())
             .filter(|w| is_valid_word(w))
@@ -71,7 +77,12 @@ pub fn read_starting_words(path: &Path) -> Option<Vec<String>> {
 }
 
 pub fn write_starting_words(path: &Path, words: &[String]) {
-    if let Ok(mut file) = OpenOptions::new().create(true).write(true).truncate(true).open(path) {
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path)
+    {
         for word in words.iter().take(5) {
             let _ = writeln!(file, "{word}");
         }
@@ -275,7 +286,7 @@ mod tests {
             "SLATE".to_string(),
             "RAISE".to_string(),
             "STARE".to_string(),
-            "ARISE".to_string()
+            "ARISE".to_string(),
         ];
 
         write_starting_words(&file_path, &words);
@@ -302,7 +313,7 @@ mod tests {
             "STARE".to_string(),
             "ARISE".to_string(),
             "IRATE".to_string(),
-            "ATONE".to_string()
+            "ATONE".to_string(),
         ];
 
         write_starting_words(&file_path, &words);
@@ -326,7 +337,7 @@ mod tests {
             "SLATE".to_string(),
             "RAISE".to_string(),
             "STARE".to_string(),
-            "ARISE".to_string()
+            "ARISE".to_string(),
         ];
 
         write_starting_words(&file_path, &original_words);
@@ -363,4 +374,3 @@ mod tests {
         assert!(words.iter().all(|w| w.chars().all(|c| c.is_uppercase())));
     }
 }
-

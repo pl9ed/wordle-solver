@@ -10,6 +10,7 @@ pub enum Feedback {
 impl Feedback {
     /// Convert this feedback to its character representation
     #[allow(dead_code)]
+    #[must_use]
     pub const fn as_char(self) -> char {
         match self {
             Self::Match => 'G',
@@ -19,6 +20,7 @@ impl Feedback {
     }
 
     /// Parse a character into a Feedback variant
+    #[must_use]
     pub const fn from_char(c: char) -> Option<Self> {
         match c {
             'G' => Some(Self::Match),
@@ -29,11 +31,8 @@ impl Feedback {
     }
 }
 
-pub fn filter_candidates(
-    candidates: &[String],
-    guess: &str,
-    feedback: &[Feedback],
-) -> Vec<String> {
+#[must_use]
+pub fn filter_candidates(candidates: &[String], guess: &str, feedback: &[Feedback]) -> Vec<String> {
     let guess_chars: Vec<char> = guess.chars().collect();
 
     let mut filtered = Vec::new();
@@ -81,6 +80,7 @@ pub fn filter_candidates(
     filtered
 }
 
+#[must_use]
 pub fn get_feedback(guess: &str, solution: &str) -> Vec<Feedback> {
     let mut feedback = [Feedback::NoMatch; 5];
     let mut solution_chars: Vec<char> = solution.chars().collect();
@@ -94,7 +94,9 @@ pub fn get_feedback(guess: &str, solution: &str) -> Vec<Feedback> {
     }
     // Second pass: partial matches (yellow)
     for i in 0..5 {
-        if feedback[i] == Feedback::Match { continue; }
+        if feedback[i] == Feedback::Match {
+            continue;
+        }
         if let Some(pos) = solution_chars.iter().position(|&c| c == guess_chars[i]) {
             feedback[i] = Feedback::PartialMatch;
             solution_chars[pos] = '_'; // Mark as used
@@ -104,6 +106,7 @@ pub fn get_feedback(guess: &str, solution: &str) -> Vec<Feedback> {
 }
 
 #[allow(clippy::cast_precision_loss)] // don't care about this
+#[must_use]
 pub fn expected_pool_size(guess: &str, candidates: &[String]) -> f64 {
     let mut pattern_counts: HashMap<Vec<Feedback>, usize> = HashMap::new();
     for solution in candidates {
@@ -111,10 +114,18 @@ pub fn expected_pool_size(guess: &str, candidates: &[String]) -> f64 {
         *pattern_counts.entry(pattern).or_insert(0) += 1;
     }
     let total = candidates.len() as f64;
-    pattern_counts.values().map(|&count| (count as f64).powi(2)).sum::<f64>() / total
+    pattern_counts
+        .values()
+        .map(|&count| (count as f64).powi(2))
+        .sum::<f64>()
+        / total
 }
 
-pub fn best_information_guess<'a>(wordbank: &'a [String], candidates: &'a [String]) -> (&'a String, f64, bool) {
+#[must_use]
+pub fn best_information_guess<'a>(
+    wordbank: &'a [String],
+    candidates: &'a [String],
+) -> (&'a String, f64, bool) {
     let mut best_word = &wordbank[0];
     let mut best_score = f64::INFINITY;
     let mut is_candidate = false;
@@ -129,8 +140,12 @@ pub fn best_information_guess<'a>(wordbank: &'a [String], candidates: &'a [Strin
     (best_word, best_score, is_candidate)
 }
 
+/// # Panics
+/// Panics if the expected pool size comparison fails (should never happen with valid f64 values).
+#[must_use]
 pub fn compute_best_starting_words(wordbank: &[String]) -> Vec<String> {
-    let mut scored: Vec<(String, f64)> = wordbank.iter()
+    let mut scored: Vec<(String, f64)> = wordbank
+        .iter()
         .map(|w| (w.clone(), expected_pool_size(w, wordbank)))
         .collect();
     scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
@@ -160,99 +175,124 @@ mod tests {
     #[test]
     fn test_get_feedback_all_correct() {
         let feedback = get_feedback("CRANE", "CRANE");
-        assert_eq!(feedback, vec![
-            Feedback::Match,
-            Feedback::Match,
-            Feedback::Match,
-            Feedback::Match,
-            Feedback::Match
-        ]);
+        assert_eq!(
+            feedback,
+            vec![
+                Feedback::Match,
+                Feedback::Match,
+                Feedback::Match,
+                Feedback::Match,
+                Feedback::Match
+            ]
+        );
     }
 
     #[test]
     fn test_get_feedback_all_wrong() {
         let feedback = get_feedback("CRANE", "BOILS");
-        assert_eq!(feedback, vec![
-            Feedback::NoMatch,
-            Feedback::NoMatch,
-            Feedback::NoMatch,
-            Feedback::NoMatch,
-            Feedback::NoMatch
-        ]);
+        assert_eq!(
+            feedback,
+            vec![
+                Feedback::NoMatch,
+                Feedback::NoMatch,
+                Feedback::NoMatch,
+                Feedback::NoMatch,
+                Feedback::NoMatch
+            ]
+        );
     }
 
     #[test]
     fn test_get_feedback_partial_matches() {
         let feedback = get_feedback("CRANE", "NACRE");
-        assert_eq!(feedback, vec![
-            Feedback::PartialMatch, // C is in solution but wrong position
-            Feedback::PartialMatch, // R is in solution but wrong position
-            Feedback::PartialMatch, // A is in solution but wrong position
-            Feedback::PartialMatch, // N is in solution but wrong position
-            Feedback::Match         // E is in correct position
-        ]);
+        assert_eq!(
+            feedback,
+            vec![
+                Feedback::PartialMatch, // C is in solution but wrong position
+                Feedback::PartialMatch, // R is in solution but wrong position
+                Feedback::PartialMatch, // A is in solution but wrong position
+                Feedback::PartialMatch, // N is in solution but wrong position
+                Feedback::Match         // E is in correct position
+            ]
+        );
     }
 
     #[test]
     fn test_get_feedback_mixed() {
         let feedback = get_feedback("RAISE", "AROSE");
-        assert_eq!(feedback, vec![
-            Feedback::PartialMatch, // R is in solution but wrong position
-            Feedback::PartialMatch, // A is in solution but wrong position
-            Feedback::NoMatch,      // I not in solution
-            Feedback::Match,        // S is correct
-            Feedback::Match         // E is correct
-        ]);
+        assert_eq!(
+            feedback,
+            vec![
+                Feedback::PartialMatch, // R is in solution but wrong position
+                Feedback::PartialMatch, // A is in solution but wrong position
+                Feedback::NoMatch,      // I not in solution
+                Feedback::Match,        // S is correct
+                Feedback::Match         // E is correct
+            ]
+        );
     }
 
     #[test]
     fn test_get_feedback_duplicate_letters_both_present() {
         // Guess has three E's, solution has two E's (ELEGY = E_E__)
         let feedback = get_feedback("EERIE", "ELEGY");
-        assert_eq!(feedback, vec![
-            Feedback::Match,        // E correct position
-            Feedback::PartialMatch, // E in solution but wrong position (matches position 3)
-            Feedback::NoMatch,      // R not in solution
-            Feedback::NoMatch,      // I not in solution
-            Feedback::NoMatch       // E already used (only 2 E's in solution)
-        ]);
+        assert_eq!(
+            feedback,
+            vec![
+                Feedback::Match,        // E correct position
+                Feedback::PartialMatch, // E in solution but wrong position (matches position 3)
+                Feedback::NoMatch,      // R not in solution
+                Feedback::NoMatch,      // I not in solution
+                Feedback::NoMatch       // E already used (only 2 E's in solution)
+            ]
+        );
     }
 
     #[test]
     fn test_get_feedback_duplicate_letters_one_correct() {
         // Guess has two L's, solution has one L at position 1
         let feedback = get_feedback("SKILL", "SLATE");
-        assert_eq!(feedback, vec![
-            Feedback::Match,        // S correct
-            Feedback::NoMatch,      // K not in solution
-            Feedback::NoMatch,      // I not in solution
-            Feedback::PartialMatch, // L in solution but wrong position
-            Feedback::NoMatch       // L already used (only one L in solution)
-        ]);
+        assert_eq!(
+            feedback,
+            vec![
+                Feedback::Match,        // S correct
+                Feedback::NoMatch,      // K not in solution
+                Feedback::NoMatch,      // I not in solution
+                Feedback::PartialMatch, // L in solution but wrong position
+                Feedback::NoMatch       // L already used (only one L in solution)
+            ]
+        );
     }
 
     #[test]
     fn test_get_feedback_duplicate_letters_one_yellow() {
         // Guess has two O's, solution has one O at position 1
         let feedback = get_feedback("ROBOT", "WORLD");
-        assert_eq!(feedback, vec![
-            Feedback::PartialMatch, // R in solution but wrong position
-            Feedback::Match,        // O correct position
-            Feedback::NoMatch,      // B not in solution
-            Feedback::NoMatch,      // O already used (only one O in WORLD)
-            Feedback::NoMatch       // T not in solution
-        ]);
+        assert_eq!(
+            feedback,
+            vec![
+                Feedback::PartialMatch, // R in solution but wrong position
+                Feedback::Match,        // O correct position
+                Feedback::NoMatch,      // B not in solution
+                Feedback::NoMatch,      // O already used (only one O in WORLD)
+                Feedback::NoMatch       // T not in solution
+            ]
+        );
     }
 
     #[test]
     fn test_filter_candidates_all_green() {
-        let candidates = vec!["CRANE".to_string(), "TRAIN".to_string(), "BRAIN".to_string()];
+        let candidates = vec![
+            "CRANE".to_string(),
+            "TRAIN".to_string(),
+            "BRAIN".to_string(),
+        ];
         let feedback = vec![
-            Feedback::NoMatch,      // T not at position 0
-            Feedback::Match,        // R at position 1
-            Feedback::Match,        // A at position 2
-            Feedback::Match,        // I at position 3
-            Feedback::Match         // N at position 4
+            Feedback::NoMatch, // T not at position 0
+            Feedback::Match,   // R at position 1
+            Feedback::Match,   // A at position 2
+            Feedback::Match,   // I at position 3
+            Feedback::Match,   // N at position 4
         ];
         let result = filter_candidates(&candidates, "TRAIN", &feedback);
         // Only BRAIN matches: _RAIN pattern with no T
@@ -265,14 +305,14 @@ mod tests {
             "BRAKE".to_string(),
             "TRACE".to_string(),
             "GRACE".to_string(),
-            "CRAVE".to_string()
+            "CRAVE".to_string(),
         ];
         let feedback = vec![
             Feedback::PartialMatch, // C in word but not position 0
             Feedback::PartialMatch, // R in word but not position 1
             Feedback::Match,        // A at position 2
             Feedback::NoMatch,      // N not in word
-            Feedback::Match         // E at position 4
+            Feedback::Match,        // E at position 4
         ];
         let result = filter_candidates(&candidates, "CRANE", &feedback);
         // We need words with C elsewhere (not pos 0), R elsewhere (not pos 1), A at 2, E at 4
@@ -285,14 +325,14 @@ mod tests {
             "CRANE".to_string(),
             "BRAIN".to_string(),
             "STAIN".to_string(),
-            "PLAIN".to_string()
+            "PLAIN".to_string(),
         ];
         let feedback = vec![
             Feedback::NoMatch,
             Feedback::NoMatch,
             Feedback::NoMatch,
             Feedback::NoMatch,
-            Feedback::NoMatch
+            Feedback::NoMatch,
         ];
         let result = filter_candidates(&candidates, "CRANE", &feedback);
         // Should eliminate any word containing C, R, A, N, or E
@@ -306,14 +346,14 @@ mod tests {
             "LEAST".to_string(),
             "FEAST".to_string(),
             "YEAST".to_string(),
-            "TOAST".to_string()
+            "TOAST".to_string(),
         ];
         let feedback = vec![
             Feedback::NoMatch,      // R not in word
             Feedback::Match,        // E correct position
             Feedback::PartialMatch, // A in word but wrong position
             Feedback::NoMatch,      // I not in word
-            Feedback::NoMatch       // S not in word
+            Feedback::NoMatch,      // S not in word
         ];
         let result = filter_candidates(&candidates, "REAIS", &feedback);
         // Should keep words with E at position 1, A elsewhere, no R/I/S
@@ -328,14 +368,14 @@ mod tests {
         let candidates = vec![
             "SPEED".to_string(),
             "CREEP".to_string(),
-            "SHELF".to_string()
+            "SHELF".to_string(),
         ];
         let feedback = vec![
-            Feedback::Match,    // S correct
-            Feedback::NoMatch,  // K not in word
-            Feedback::NoMatch,  // I not in word
-            Feedback::Match,    // L correct
-            Feedback::NoMatch   // Second L is gray (only one L in solution)
+            Feedback::Match,   // S correct
+            Feedback::NoMatch, // K not in word
+            Feedback::NoMatch, // I not in word
+            Feedback::Match,   // L correct
+            Feedback::NoMatch, // Second L is gray (only one L in solution)
         ];
         let result = filter_candidates(&candidates, "SKILL", &feedback);
         // Should keep only words with S at position 0, L at position 3, and no extra L
@@ -355,7 +395,7 @@ mod tests {
         let candidates = vec![
             "CRANE".to_string(),
             "CRATE".to_string(),
-            "CRAZE".to_string()
+            "CRAZE".to_string(),
         ];
         let score = expected_pool_size("CRATE", &candidates);
         // Score should be > 0 and < candidates.len()
@@ -369,7 +409,7 @@ mod tests {
         let candidates = vec![
             "AAAAA".to_string(),
             "AAAAA".to_string(),
-            "AAAAA".to_string()
+            "AAAAA".to_string(),
         ];
         let score = expected_pool_size("BBBBB", &candidates);
         // All give same feedback (all gray), so pool size is 3.0
@@ -382,12 +422,9 @@ mod tests {
             "CRANE".to_string(),
             "SLATE".to_string(),
             "RAISE".to_string(),
-            "STARE".to_string()
+            "STARE".to_string(),
         ];
-        let candidates = vec![
-            "CRANE".to_string(),
-            "SLATE".to_string()
-        ];
+        let candidates = vec!["CRANE".to_string(), "SLATE".to_string()];
         let (guess, score, is_candidate) = best_information_guess(&wordbank, &candidates);
 
         // Should return a valid word from wordbank
@@ -407,19 +444,20 @@ mod tests {
             "CCCCC".to_string(),
             "CRANE".to_string(),
             "TRAIN".to_string(),
-            "BRAIN".to_string()
+            "BRAIN".to_string(),
         ];
         let candidates = vec![
             "CRANE".to_string(),
             "TRAIN".to_string(),
-            "BRAIN".to_string()
+            "BRAIN".to_string(),
         ];
         let (guess, _, _) = best_information_guess(&wordbank, &candidates);
 
         // One of the actual candidates should be better than words with no shared letters
         assert!(
             guess == "CRANE" || guess == "TRAIN" || guess == "BRAIN",
-            "Expected a candidate word but got: {}", guess
+            "Expected a candidate word but got: {}",
+            guess
         );
     }
 
@@ -432,7 +470,7 @@ mod tests {
             "STARE".to_string(),
             "ARISE".to_string(),
             "ATONE".to_string(),
-            "IRATE".to_string()
+            "IRATE".to_string(),
         ];
         let starting_words = compute_best_starting_words(&wordbank);
 
@@ -443,14 +481,10 @@ mod tests {
 
     #[test]
     fn test_compute_best_starting_words_with_small_wordbank() {
-        let wordbank = vec![
-            "CRANE".to_string(),
-            "SLATE".to_string()
-        ];
+        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
         let starting_words = compute_best_starting_words(&wordbank);
 
         // Should return at most 5, but only 2 available
         assert_eq!(starting_words.len(), 2);
     }
 }
-

@@ -1,5 +1,7 @@
+use crate::solver::{
+    Feedback, best_information_guess, compute_best_starting_words, filter_candidates,
+};
 use crate::wordbank::{get_wordle_start_path, read_starting_words, write_starting_words};
-use crate::solver::{filter_candidates, best_information_guess, compute_best_starting_words, Feedback};
 use std::io::BufRead;
 use std::path::PathBuf;
 
@@ -26,7 +28,8 @@ enum GuessInput {
 
 pub fn game_loop<R: BufRead>(initial_wordbank: &[String], mut reader: R) {
     let start_path = get_wordle_start_path();
-    let (starting_words, used_cache) = load_or_compute_starting_words(initial_wordbank, start_path.as_ref());
+    let (starting_words, used_cache) =
+        load_or_compute_starting_words(initial_wordbank, start_path.as_ref());
     display_starting_words(&starting_words, used_cache, start_path.as_ref());
 
     let mut candidates = initial_wordbank.to_vec();
@@ -47,7 +50,9 @@ pub fn game_loop<R: BufRead>(initial_wordbank: &[String], mut reader: R) {
             GuessInput::Invalid => continue,
         };
 
-        let Some(feedback) = read_feedback(&mut reader) else { continue };
+        let Some(feedback) = read_feedback(&mut reader) else {
+            continue;
+        };
 
         candidates = filter_candidates(&candidates, &guess, &feedback);
         display_candidates(&candidates);
@@ -69,17 +74,18 @@ fn load_or_compute_starting_words(
     start_path: Option<&PathBuf>,
 ) -> (Vec<String>, bool) {
     if let Some(path) = start_path
-        && let Some(words) = read_starting_words(path) {
+        && let Some(words) = read_starting_words(path)
+    {
         return (words, true);
     }
-    
+
     println!("Computing optimal starting words, please wait...");
     let words = compute_best_starting_words(wordbank);
-    
+
     if let Some(path) = start_path {
         write_starting_words(path, &words);
     }
-    
+
     (words, false)
 }
 
@@ -126,10 +132,8 @@ fn read_feedback<R: BufRead>(reader: &mut R) -> Option<Vec<Feedback>> {
     let input = input.trim().to_uppercase();
 
     if is_valid_feedback(&input) {
-        let feedback: Option<Vec<Feedback>> = input.chars()
-            .map(Feedback::from_char)
-            .collect();
-        
+        let feedback: Option<Vec<Feedback>> = input.chars().map(Feedback::from_char).collect();
+
         if feedback.is_none() {
             println!("Invalid feedback. Please enter 5 characters using G, Y, or X.");
         }
@@ -147,8 +151,6 @@ fn display_candidates(candidates: &[String]) {
     }
 }
 
-
-
 fn check_game_state(candidates: &[String]) -> GameState {
     match candidates.len() {
         0 => {
@@ -162,7 +164,6 @@ fn check_game_state(candidates: &[String]) -> GameState {
         _ => GameState::Continue,
     }
 }
-
 
 fn display_recommendation(guess: &str, score: f64, is_candidate: bool) {
     let category = if is_candidate {
@@ -180,7 +181,11 @@ mod tests {
 
     #[test]
     fn test_game_loop_immediate_exit() {
-        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let wordbank = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+        ];
         let input = "exit\n";
         let reader = Cursor::new(input);
 
@@ -190,7 +195,11 @@ mod tests {
 
     #[test]
     fn test_game_loop_invalid_guess_then_exit() {
-        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let wordbank = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+        ];
         let input = "abc\nexit\n";
         let reader = Cursor::new(input);
 
@@ -200,7 +209,11 @@ mod tests {
 
     #[test]
     fn test_game_loop_new_game_command() {
-        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let wordbank = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+        ];
         let input = "next\nexit\n";
         let reader = Cursor::new(input);
 
@@ -210,7 +223,11 @@ mod tests {
 
     #[test]
     fn test_game_loop_valid_guess_invalid_feedback() {
-        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let wordbank = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+        ];
         let input = "CRANE\nINVALID\nexit\n";
         let reader = Cursor::new(input);
 
@@ -220,7 +237,11 @@ mod tests {
 
     #[test]
     fn test_game_loop_valid_guess_short_feedback() {
-        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let wordbank = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+        ];
         let input = "CRANE\nGGG\nexit\n";
         let reader = Cursor::new(input);
 
@@ -230,7 +251,11 @@ mod tests {
 
     #[test]
     fn test_game_loop_complete_game_win() {
-        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let wordbank = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+        ];
         let input = "CRANE\nGGGGG\n";
         let reader = Cursor::new(input);
 
@@ -244,7 +269,7 @@ mod tests {
             "CRANE".to_string(),
             "SLATE".to_string(),
             "RAISE".to_string(),
-            "STARE".to_string()
+            "STARE".to_string(),
         ];
         // First guess eliminates some candidates, second guess finds solution
         let input = "CRANE\nXXXXX\nSLATE\nGGGGG\n";
@@ -291,7 +316,7 @@ mod tests {
             "SLATE".to_string(),
             "RAISE".to_string(),
             "STARE".to_string(),
-            "SPARE".to_string()
+            "SPARE".to_string(),
         ];
         // Give mixed feedback with greens, yellows, and grays
         let input = "CRANE\nXYGXX\nSLATE\nGGGGG\n";
@@ -302,7 +327,11 @@ mod tests {
 
     #[test]
     fn test_game_loop_multiple_games() {
-        let wordbank = vec!["CRANE".to_string(), "SLATE".to_string(), "RAISE".to_string()];
+        let wordbank = vec![
+            "CRANE".to_string(),
+            "SLATE".to_string(),
+            "RAISE".to_string(),
+        ];
         // Play one game, start new game, then exit
         let input = "CRANE\nGGGGG\nnext\nSLATE\nGGGGG\n";
         let reader = Cursor::new(input);
@@ -358,7 +387,7 @@ mod tests {
             "CCCCC".to_string(),
             "DDDDD".to_string(),
             "EEEEE".to_string(),
-            "FFFFF".to_string()
+            "FFFFF".to_string(),
         ];
         // Progressively narrow down candidates
         let input = "AAAAA\nXXXXX\nBBBBB\nXXXXX\nCCCCC\nGGGGG\n";
@@ -367,4 +396,3 @@ mod tests {
         game_loop(&wordbank, reader);
     }
 }
-

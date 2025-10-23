@@ -1,12 +1,12 @@
 mod cli;
-mod wordbank;
-mod solver;
 mod game_state;
+mod solver;
+mod wordbank;
 
 use cli::parse_cli;
-use wordbank::load_wordbank;
 use game_state::game_loop;
 use std::io;
+use wordbank::load_wordbank;
 
 fn main() {
     let cli = parse_cli();
@@ -18,5 +18,3 @@ fn app(wordbank_path: Option<String>) {
     let stdin = io::stdin();
     game_loop(&initial_wordbank, stdin.lock());
 }
-
-

@@ -1,4 +1,4 @@
-use clap::{Parser};
+use clap::Parser;
 
 /// Wordle Solver CLI options
 #[derive(Parser, Debug)]
@@ -9,6 +9,7 @@ pub struct Cli {
     pub wordbank_path: Option<String>,
 }
 
+#[must_use]
 pub fn parse_cli() -> Cli {
     Cli::parse()
 }
@@ -48,4 +49,3 @@ mod tests {
         }
     }
 }
-

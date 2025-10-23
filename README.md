@@ -1,6 +1,23 @@
 # Wordle Solver CLI
 
-A powerful command-line Wordle solver written in Rust that helps you solve Wordle puzzles optimally using information theory.
+A command-line Wordle solver written in Rust that helps you solve Wordle puzzles optimally.
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+  - [Prerequisites](#prerequisites)
+  - [Build from Source](#build-from-source)
+- [Usage](#usage)
+  - [Basic Usage](#basic-usage)
+  - [Custom Wordbank](#custom-wordbank)
+  - [Interactive Gameplay](#interactive-gameplay)
+  - [Commands](#commands)
+- [Example Session](#example-session)
+- [How It Works](#how-it-works)
+  - [Algorithm](#algorithm)
+  - [Starting Word Computation](#starting-word-computation)
+- [Project Structure](#project-structure)
 
 ## Features
 
@@ -157,24 +174,17 @@ On first run, the solver computes the 5 best starting words by evaluating every 
 ```
 wordle-solver/
 ├── src/
-│   ├── main.rs          # Entry point
-│   ├── cli.rs           # Command-line argument parsing
-│   ├── game_state.rs    # Game loop and user interaction
-│   ├── solver.rs        # Core solving algorithms
-│   ├── wordbank.rs      # Word list loading and caching
+│   ├── main.rs          # Binary entry point
+│   ├── lib.rs           # Library interface for testing
+│   ├── cli.rs           # Command-line argument parsing (with unit tests)
+│   ├── game_state.rs    # Game loop and user interaction (with unit tests)
+│   ├── solver.rs        # Core solving algorithms (with unit tests)
+│   ├── wordbank.rs      # Word list loading and caching (with unit tests)
 │   └── resources/
 │       └── wordbank.txt # Embedded default word list
+├── tests/
+│   └── integration_tests.rs  # Integration tests
 ├── Cargo.toml           # Project configuration
+├── LICENSE              # License file
 └── README.md            # This file
 ```
-
-## Dependencies
-
-- **clap** (4.4): Command-line argument parsing
-- **dirs** (6.0.0): Cross-platform home directory detection
-
-## Performance
-
-- **Initial computation**: 10-30 seconds (depending on wordbank size)
-- **Cached runs**: Instant startup
-- **Per-guess computation**: 1-5 seconds (depending on remaining candidates)
