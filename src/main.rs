@@ -119,6 +119,54 @@ fn recommend_guess(candidates: &[String]) -> Option<&String> {
     best_word
 }
 
+fn get_feedback(guess: &str, solution: &str) -> String {
+    let mut feedback = ['X'; 5];
+    let mut solution_chars: Vec<char> = solution.chars().collect();
+    let guess_chars: Vec<char> = guess.chars().collect();
+    // First pass: greens
+    for i in 0..5 {
+        if guess_chars[i] == solution_chars[i] {
+            feedback[i] = 'G';
+            solution_chars[i] = '_'; // Mark as used
+        }
+    }
+    // Second pass: yellows
+    for i in 0..5 {
+        if feedback[i] == 'G' { continue; }
+        if let Some(pos) = solution_chars.iter().position(|&c| c == guess_chars[i]) {
+            feedback[i] = 'Y';
+            solution_chars[pos] = '_'; // Mark as used
+        }
+    }
+    feedback.iter().collect()
+}
+
+fn expected_pool_size(guess: &str, candidates: &[String]) -> f64 {
+    use std::collections::HashMap;
+    let mut pattern_counts: HashMap<String, usize> = HashMap::new();
+    for solution in candidates {
+        let pattern = get_feedback(guess, solution);
+        *pattern_counts.entry(pattern).or_insert(0) += 1;
+    }
+    let total = candidates.len() as f64;
+    pattern_counts.values().map(|&count| (count as f64).powi(2)).sum::<f64>() / total
+}
+
+fn best_information_guess<'a>(wordbank: &'a [String], candidates: &'a [String]) -> (&'a String, f64, bool) {
+    let mut best_word = &wordbank[0];
+    let mut best_score = f64::INFINITY;
+    let mut is_candidate = false;
+    for guess in wordbank {
+        let score = expected_pool_size(guess, candidates);
+        if score < best_score {
+            best_word = guess;
+            best_score = score;
+            is_candidate = candidates.contains(guess);
+        }
+    }
+    (best_word, best_score, is_candidate)
+}
+
 fn main() {
     let initial_wordbank = match get_wordbank() {
         Ok(words) => words,
@@ -169,14 +217,11 @@ fn main() {
             .collect();
         scored_candidates.sort_by(|a, b| b.1.cmp(&a.1));
         println!("Possible candidates ({}):", scored_candidates.len());
-        for (word, _) in scored_candidates.iter().take(20) {
+        for (word, _) in scored_candidates.iter().take(5) {
             println!("{}", word);
         }
-        if scored_candidates.len() > 20 {
-            println!("...and {} more", scored_candidates.len() - 20);
-        }
-        if let Some(recommendation) = recommend_guess(&candidates) {
-            println!("Recommended next guess: {}", recommendation);
+        if scored_candidates.len() > 5 {
+            println!("...and {} more", scored_candidates.len() - 5);
         }
         if candidates.len() == 1 {
             println!("Solution found: {}", candidates[0]);
@@ -186,5 +231,7 @@ fn main() {
             println!("No candidates remain. Check your inputs.");
             break;
         }
+        let (info_guess, info_score, is_candidate) = best_information_guess(&initial_wordbank, &candidates);
+        println!("Recommended guess: {} (expected pool size {:.2}) [{}]", info_guess, info_score, if is_candidate { "solution candidate" } else { "information-gathering" });
     }
 }
