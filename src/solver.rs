@@ -5,39 +5,44 @@ pub fn filter_candidates(
     guess: &str,
     feedback: &str,
 ) -> Vec<String> {
+    let guess_chars: Vec<char> = guess.chars().collect();
+    let feedback_chars: Vec<char> = feedback.chars().collect();
+    
     let mut filtered = Vec::new();
     'word: for word in candidates {
+        let word_chars: Vec<char> = word.chars().collect();
+        
         // First pass: check greens
-        for (i, (g, f)) in guess.chars().zip(feedback.chars()).enumerate() {
-            if f == 'G' && word.chars().nth(i).unwrap() != g {
+        for (i, (&g, &f)) in guess_chars.iter().zip(feedback_chars.iter()).enumerate() {
+            if f == 'G' && word_chars[i] != g {
                 continue 'word;
             }
         }
         // Second pass: check yellows
-        for (i, (g, f)) in guess.chars().zip(feedback.chars()).enumerate() {
+        for (i, (&g, &f)) in guess_chars.iter().zip(feedback_chars.iter()).enumerate() {
             if f == 'Y' {
-                if word.chars().nth(i).unwrap() == g {
+                if word_chars[i] == g {
                     continue 'word;
                 }
-                if !word.contains(g) {
+                if !word_chars.contains(&g) {
                     continue 'word;
                 }
             }
         }
         // Third pass: check greys (X)
-        for (i, (g, f)) in guess.chars().zip(feedback.chars()).enumerate() {
+        for (i, (&g, &f)) in guess_chars.iter().zip(feedback_chars.iter()).enumerate() {
             if f == 'X' {
-                let elsewhere = guess.chars().enumerate().any(|(j, gc)| {
-                    gc == g && (feedback.chars().nth(j).unwrap() == 'G' || feedback.chars().nth(j).unwrap() == 'Y')
+                let elsewhere = guess_chars.iter().zip(feedback_chars.iter()).any(|(&gc, &fc)| {
+                    gc == g && (fc == 'G' || fc == 'Y')
                 });
                 if elsewhere {
                     // Must not be at this position
-                    if word.chars().nth(i).unwrap() == g {
+                    if word_chars[i] == g {
                         continue 'word;
                     }
                 } else {
                     // Must not be anywhere
-                    if word.contains(g) {
+                    if word_chars.contains(&g) {
                         continue 'word;
                     }
                 }
@@ -46,38 +51,6 @@ pub fn filter_candidates(
         filtered.push(word.clone());
     }
     filtered
-}
-
-pub fn build_freq_chart(words: &[String]) -> [[usize; 26]; 5] {
-    let mut freq = [[0; 26]; 5];
-    for word in words {
-        for (i, c) in word.chars().enumerate() {
-            let idx = (c as u8 - b'A') as usize;
-            freq[i][idx] += 1;
-        }
-    }
-    freq
-}
-
-pub fn score_word(word: &str, freq: &[[usize; 26]; 5]) -> usize {
-    word.chars().enumerate().map(|(i, c)| {
-        let idx = (c as u8 - b'A') as usize;
-        freq[i][idx]
-    }).sum()
-}
-
-pub fn recommend_guess(candidates: &[String]) -> Option<&String> {
-    let freq = build_freq_chart(candidates);
-    let mut best_score = 0;
-    let mut best_word = None;
-    for word in candidates {
-        let score = score_word(word, &freq);
-        if score > best_score {
-            best_score = score;
-            best_word = Some(word);
-        }
-    }
-    best_word
 }
 
 pub fn get_feedback(guess: &str, solution: &str) -> String {
@@ -128,3 +101,10 @@ pub fn best_information_guess<'a>(wordbank: &'a [String], candidates: &'a [Strin
     (best_word, best_score, is_candidate)
 }
 
+pub fn compute_best_starting_words(wordbank: &[String]) -> Vec<String> {
+    let mut scored: Vec<(String, f64)> = wordbank.iter()
+        .map(|w| (w.clone(), expected_pool_size(w, wordbank)))
+        .collect();
+    scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    scored.into_iter().take(5).map(|(w, _)| w).collect()
+}
