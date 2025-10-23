@@ -1,5 +1,5 @@
 use crate::solver::{
-    best_information_guess, compute_best_starting_words, filter_candidates, Feedback,
+    Feedback, best_information_guess, compute_best_starting_words, filter_candidates,
 };
 use crate::wordbank::{get_wordle_start_path, read_starting_words, write_starting_words};
 use std::path::PathBuf;
@@ -11,6 +11,7 @@ enum GameState {
 }
 
 /// User action from input
+#[derive(Debug)]
 pub enum UserAction {
     Guess(String),
     Exit,
@@ -25,6 +26,7 @@ pub struct StartingWordsInfo {
 }
 
 /// Recommendation for the next guess
+#[derive(Clone)]
 pub struct Recommendation {
     pub guess: String,
     pub score: f64,
@@ -65,7 +67,6 @@ pub trait GameInterface {
     fn display_new_game_message(&mut self, word_count: usize);
 }
 
-
 pub fn game_loop<I: GameInterface>(initial_wordbank: &[String], interface: &mut I) {
     let start_path = get_wordle_start_path();
     let (starting_words, used_cache) =
@@ -82,9 +83,8 @@ pub fn game_loop<I: GameInterface>(initial_wordbank: &[String], interface: &mut 
 
     loop {
         let action = loop {
-            match interface.read_guess() {
-                Some(action) => break action,
-                None => continue, // Invalid input, retry
+            if let Some(action) = interface.read_guess() {
+                break action;
             }
         };
 
@@ -102,13 +102,11 @@ pub fn game_loop<I: GameInterface>(initial_wordbank: &[String], interface: &mut 
                     cache_path: start_path.clone(),
                 };
                 interface.display_starting_words(&info);
-                continue;
             }
             UserAction::Guess(guess) => {
                 let feedback = loop {
-                    match interface.read_feedback() {
-                        Some(fb) => break fb,
-                        None => continue, // Invalid input, retry
+                    if let Some(fb) = interface.read_feedback() {
+                        break fb;
                     }
                 };
 
@@ -154,7 +152,6 @@ fn load_or_compute_starting_words(
     (words, false)
 }
 
-
 fn check_game_state<I: GameInterface>(candidates: &[String], interface: &mut I) -> GameState {
     match candidates.len() {
         0 => {
@@ -169,12 +166,11 @@ fn check_game_state<I: GameInterface>(candidates: &[String], interface: &mut I) 
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
     use crate::cli::CliInterface;
+    use std::io::Cursor;
 
     #[test]
     fn test_game_loop_immediate_exit() {

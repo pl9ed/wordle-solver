@@ -1,8 +1,18 @@
-use clap::Parser;
+use crate::game_state::{GameInterface, Recommendation, StartingWordsInfo, UserAction};
 use crate::solver::Feedback;
-use crate::game_state::{GameInterface, UserAction, StartingWordsInfo, Recommendation};
+use clap::{Parser, ValueEnum};
 use std::io::BufRead;
 use std::path::PathBuf;
+
+/// UI mode for the application
+#[derive(Clone, Debug, ValueEnum, Default)]
+pub enum UiMode {
+    /// Terminal User Interface (default)
+    #[default]
+    Tui,
+    /// Command Line Interface
+    Cli,
+}
 
 /// Wordle Solver CLI options
 #[derive(Parser, Debug)]
@@ -11,6 +21,10 @@ pub struct Cli {
     /// Path to a newline-delimited wordbank file
     #[arg(short = 'i', long = "input")]
     pub wordbank_path: Option<String>,
+
+    /// User interface mode
+    #[arg(long = "ui", default_value = "tui")]
+    pub ui_mode: UiMode,
 }
 
 #[must_use]
@@ -58,6 +72,10 @@ pub fn display_starting_words(words: &[String], used_cache: bool, cache_path: Op
     }
 }
 
+/// Read a guess from the user
+///
+/// # Panics
+/// Panics if reading from the input stream fails
 pub fn read_guess<R: BufRead>(reader: &mut R) -> GuessInput {
     println!("\nEnter your guess (5 letters, or 'exit' to quit, or 'next' to start a new game):");
     let mut input = String::new();
@@ -75,6 +93,10 @@ pub fn read_guess<R: BufRead>(reader: &mut R) -> GuessInput {
     }
 }
 
+/// Read feedback from the user
+///
+/// # Panics
+/// Panics if reading from the input stream fails
 pub fn read_feedback<R: BufRead>(reader: &mut R) -> Option<Vec<Feedback>> {
     println!("Enter feedback (G=green, Y=yellow, X=gray, e.g. GYXXG):");
     let mut input = String::new();
@@ -115,7 +137,7 @@ pub fn display_exit_message() {
 }
 
 pub fn display_new_game_message(word_count: usize) {
-    println!("New game started. Loaded {} words.", word_count);
+    println!("New game started. Loaded {word_count} words.");
 }
 
 pub fn display_computing_message() {
@@ -127,11 +149,11 @@ pub fn display_no_candidates_message() {
 }
 
 pub fn display_solution_found(solution: &str) {
-    println!("Solution found: {}", solution);
+    println!("Solution found: {solution}");
 }
 
-/// CLI implementation of the GameInterface trait
-/// This struct wraps a BufRead reader and implements the game interface for CLI interaction
+/// CLI implementation of the `GameInterface` trait
+/// This struct wraps a `BufRead` reader and implements the game interface for CLI interaction
 pub struct CliInterface<R: BufRead> {
     reader: R,
 }
@@ -165,7 +187,11 @@ impl<R: BufRead> GameInterface for CliInterface<R> {
     }
 
     fn display_recommendation(&mut self, recommendation: &Recommendation) {
-        display_recommendation(&recommendation.guess, recommendation.score, recommendation.is_candidate);
+        display_recommendation(
+            &recommendation.guess,
+            recommendation.score,
+            recommendation.is_candidate,
+        );
     }
 
     fn display_computing_message(&mut self) {
@@ -177,7 +203,7 @@ impl<R: BufRead> GameInterface for CliInterface<R> {
     }
 
     fn display_solution_found(&mut self, solution: &str) {
-        display_solution_found(solution);
+        println!("Solution found: {solution}");
     }
 
     fn display_exit_message(&mut self) {
@@ -185,21 +211,22 @@ impl<R: BufRead> GameInterface for CliInterface<R> {
     }
 
     fn display_new_game_message(&mut self, word_count: usize) {
-        display_new_game_message(word_count);
+        println!("New game started. Loaded {word_count} words.");
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
     use crate::solver::Feedback;
+    use std::io::Cursor;
 
     #[test]
     fn test_parse_cli_no_args() {
         // Test parsing with no custom wordbank
         let cli = Cli {
             wordbank_path: None,
+            ui_mode: UiMode::Tui,
         };
         assert_eq!(cli.wordbank_path, None);
     }
@@ -209,6 +236,7 @@ mod tests {
         // Test parsing with a wordbank path
         let cli = Cli {
             wordbank_path: Some("custom_wordbank.txt".to_string()),
+            ui_mode: UiMode::Tui,
         };
         assert_eq!(cli.wordbank_path, Some("custom_wordbank.txt".to_string()));
     }
@@ -218,6 +246,7 @@ mod tests {
         // Verify CLI structure can be created and accessed
         let cli = Cli {
             wordbank_path: Some("/path/to/words.txt".to_string()),
+            ui_mode: UiMode::Cli,
         };
 
         match cli.wordbank_path {
@@ -279,7 +308,7 @@ mod tests {
         let input = "exit\n";
         let mut reader = Cursor::new(input);
         match read_guess(&mut reader) {
-            GuessInput::Exit => {},
+            GuessInput::Exit => {}
             _ => panic!("Expected Exit"),
         }
     }
@@ -289,7 +318,7 @@ mod tests {
         let input = "EXIT\n";
         let mut reader = Cursor::new(input);
         match read_guess(&mut reader) {
-            GuessInput::Exit => {},
+            GuessInput::Exit => {}
             _ => panic!("Expected Exit"),
         }
     }
@@ -299,7 +328,7 @@ mod tests {
         let input = "next\n";
         let mut reader = Cursor::new(input);
         match read_guess(&mut reader) {
-            GuessInput::NewGame => {},
+            GuessInput::NewGame => {}
             _ => panic!("Expected NewGame"),
         }
     }
@@ -309,7 +338,7 @@ mod tests {
         let input = "CRAN\n";
         let mut reader = Cursor::new(input);
         match read_guess(&mut reader) {
-            GuessInput::Invalid => {},
+            GuessInput::Invalid => {}
             _ => panic!("Expected Invalid"),
         }
     }
@@ -319,7 +348,7 @@ mod tests {
         let input = "CRANES\n";
         let mut reader = Cursor::new(input);
         match read_guess(&mut reader) {
-            GuessInput::Invalid => {},
+            GuessInput::Invalid => {}
             _ => panic!("Expected Invalid"),
         }
     }
@@ -329,7 +358,7 @@ mod tests {
         let input = "CRAN3\n";
         let mut reader = Cursor::new(input);
         match read_guess(&mut reader) {
-            GuessInput::Invalid => {},
+            GuessInput::Invalid => {}
             _ => panic!("Expected Invalid"),
         }
     }

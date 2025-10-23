@@ -1,4 +1,4 @@
-# Wordle Solver CLI
+# Wordle Solver
 
 Vibe coded wordle solver to experiment with GenAI tools.
 

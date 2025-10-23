@@ -2,8 +2,8 @@
 // These tests verify that all modules work together correctly
 
 use std::io::Cursor;
-use wordle_solver::*;
 use wordle_solver::cli::CliInterface;
+use wordle_solver::*;
 
 #[test]
 fn test_end_to_end_solver_workflow() {
