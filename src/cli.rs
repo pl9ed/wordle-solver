@@ -1,5 +1,6 @@
 use clap::Parser;
 use crate::solver::Feedback;
+use crate::game_state::{GameInterface, UserAction, StartingWordsInfo, Recommendation};
 use std::io::BufRead;
 use std::path::PathBuf;
 
@@ -127,6 +128,65 @@ pub fn display_no_candidates_message() {
 
 pub fn display_solution_found(solution: &str) {
     println!("Solution found: {}", solution);
+}
+
+/// CLI implementation of the GameInterface trait
+/// This struct wraps a BufRead reader and implements the game interface for CLI interaction
+pub struct CliInterface<R: BufRead> {
+    reader: R,
+}
+
+impl<R: BufRead> CliInterface<R> {
+    pub fn new(reader: R) -> Self {
+        Self { reader }
+    }
+}
+
+impl<R: BufRead> GameInterface for CliInterface<R> {
+    fn display_starting_words(&mut self, info: &StartingWordsInfo) {
+        display_starting_words(&info.words, info.used_cache, info.cache_path.as_ref());
+    }
+
+    fn read_guess(&mut self) -> Option<UserAction> {
+        match read_guess(&mut self.reader) {
+            GuessInput::Valid(guess) => Some(UserAction::Guess(guess)),
+            GuessInput::Exit => Some(UserAction::Exit),
+            GuessInput::NewGame => Some(UserAction::NewGame),
+            GuessInput::Invalid => None,
+        }
+    }
+
+    fn read_feedback(&mut self) -> Option<Vec<Feedback>> {
+        read_feedback(&mut self.reader)
+    }
+
+    fn display_candidates(&mut self, candidates: &[String]) {
+        display_candidates(candidates);
+    }
+
+    fn display_recommendation(&mut self, recommendation: &Recommendation) {
+        display_recommendation(&recommendation.guess, recommendation.score, recommendation.is_candidate);
+    }
+
+    fn display_computing_message(&mut self) {
+        display_computing_message();
+    }
+
+    fn display_no_candidates_message(&mut self) {
+        display_no_candidates_message();
+    }
+
+    fn display_solution_found(&mut self, solution: &str) {
+        display_solution_found(solution);
+    }
+
+    fn display_exit_message(&mut self) {
+        display_exit_message();
+    }
+
+    fn display_new_game_message(&mut self, word_count: usize) {
+        display_new_game_message(word_count);
+    }
 }
 
 #[cfg(test)]

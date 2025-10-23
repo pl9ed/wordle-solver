@@ -3,6 +3,7 @@
 
 use std::io::Cursor;
 use wordle_solver::*;
+use wordle_solver::cli::CliInterface;
 
 #[test]
 fn test_end_to_end_solver_workflow() {
@@ -21,9 +22,10 @@ fn test_end_to_end_solver_workflow() {
     // User guesses CRANE first, gets feedback, then guesses SLATE and wins
     let input = "CRANE\nXYGXX\nSLATE\nGGGGG\n";
     let reader = Cursor::new(input);
+    let mut interface = CliInterface::new(reader);
 
     // This should complete without panicking
-    game_loop(&wordbank, reader);
+    game_loop(&wordbank, &mut interface);
 }
 
 #[test]
@@ -208,7 +210,8 @@ fn test_custom_wordbank_file_to_game() {
     // Start game with this wordbank - simulate winning with APPLE
     let input = "APPLE\nGGGGG\n";
     let reader = Cursor::new(input);
-    game_loop(&wordbank, reader);
+    let mut interface = CliInterface::new(reader);
+    game_loop(&wordbank, &mut interface);
 
     // Cleanup
     std::fs::remove_file(&wordbank_path).unwrap();
@@ -302,7 +305,8 @@ fn test_edge_case_single_candidate_remaining() {
     // Game should complete in one guess
     let input = "CRANE\nGGGGG\n";
     let reader = Cursor::new(input);
-    game_loop(&wordbank, reader);
+    let mut interface = CliInterface::new(reader);
+    game_loop(&wordbank, &mut interface);
 }
 
 #[test]
@@ -315,9 +319,10 @@ fn test_edge_case_no_candidates_remaining() {
     // Give feedback that eliminates both words
     let input = "CRANE\nXXXXX\nSLATE\nXXXXX\nexit\n";
     let reader = Cursor::new(input);
+    let mut interface = CliInterface::new(reader);
 
     // Should handle gracefully without panicking
-    game_loop(&wordbank, reader);
+    game_loop(&wordbank, &mut interface);
 }
 
 #[test]

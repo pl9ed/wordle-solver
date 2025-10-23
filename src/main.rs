@@ -3,7 +3,7 @@ mod game_state;
 mod solver;
 mod wordbank;
 
-use cli::parse_cli;
+use cli::{parse_cli, CliInterface};
 use game_state::game_loop;
 use std::io;
 use wordbank::load_wordbank;
@@ -16,5 +16,6 @@ fn main() {
 fn app(wordbank_path: Option<String>) {
     let initial_wordbank = load_wordbank(wordbank_path);
     let stdin = io::stdin();
-    game_loop(&initial_wordbank, stdin.lock());
+    let mut interface = CliInterface::new(stdin.lock());
+    game_loop(&initial_wordbank, &mut interface);
 }
