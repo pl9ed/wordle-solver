@@ -20,7 +20,7 @@ fn test_end_to_end_solver_workflow() {
 
     // Simulate a game where SLATE is the answer
     // User guesses CRANE first, gets feedback, then guesses SLATE and wins
-    let input = "CRANE\nXYGXX\nSLATE\nGGGGG\n";
+    let input = "CRANE\nXYGXX\nSLATE\nGGGGG\nexit\n";
     let reader = Cursor::new(input);
     let mut interface = CliInterface::new(reader);
 
@@ -208,7 +208,7 @@ fn test_custom_wordbank_file_to_game() {
     assert!(wordbank.contains(&"GRAPE".to_string()));
 
     // Start game with this wordbank - simulate winning with APPLE
-    let input = "APPLE\nGGGGG\n";
+    let input = "APPLE\nGGGGG\nexit\n";
     let reader = Cursor::new(input);
     let mut interface = CliInterface::new(reader);
     game_loop(&wordbank, &mut interface);
@@ -303,7 +303,7 @@ fn test_edge_case_single_candidate_remaining() {
     assert!(is_candidate);
 
     // Game should complete in one guess
-    let input = "CRANE\nGGGGG\n";
+    let input = "CRANE\nGGGGG\nexit\n";
     let reader = Cursor::new(input);
     let mut interface = CliInterface::new(reader);
     game_loop(&wordbank, &mut interface);

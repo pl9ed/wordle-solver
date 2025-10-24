@@ -258,7 +258,7 @@ mod tests {
             "SLATE".to_string(),
             "RAISE".to_string(),
         ];
-        let input = "CRANE\nGGGGG\n";
+        let input = "CRANE\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
         let mut interface = CliInterface::new(reader);
 
@@ -275,7 +275,7 @@ mod tests {
             "STARE".to_string(),
         ];
         // First guess eliminates some candidates, second guess finds solution
-        let input = "CRANE\nXXXXX\nSLATE\nGGGGG\n";
+        let input = "CRANE\nXXXXX\nSLATE\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
         let mut interface = CliInterface::new(reader);
 
@@ -286,7 +286,7 @@ mod tests {
     fn test_game_loop_no_candidates_remain() {
         let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
         // Give feedback that eliminates all candidates
-        let input = "CRANE\nXXXXX\nSLATE\nXXXXX\n";
+        let input = "CRANE\nXXXXX\nSLATE\nXXXXX\nexit\n";
         let reader = Cursor::new(input);
         let mut interface = CliInterface::new(reader);
 
@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn test_game_loop_case_insensitive_guess() {
         let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
-        let input = "crane\nGGGGG\n";
+        let input = "crane\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
         let mut interface = CliInterface::new(reader);
 
@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn test_game_loop_case_insensitive_feedback() {
         let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
-        let input = "CRANE\nggggg\n";
+        let input = "CRANE\nggggg\nexit\n";
         let reader = Cursor::new(input);
         let mut interface = CliInterface::new(reader);
 
@@ -326,7 +326,7 @@ mod tests {
             "SPARE".to_string(),
         ];
         // Give mixed feedback with greens, yellows, and grays
-        let input = "CRANE\nXYGXX\nSLATE\nGGGGG\n";
+        let input = "CRANE\nXYGXX\nSLATE\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
         let mut interface = CliInterface::new(reader);
 
@@ -341,7 +341,7 @@ mod tests {
             "RAISE".to_string(),
         ];
         // Play one game, start new game, then exit
-        let input = "CRANE\nGGGGG\nnext\nSLATE\nGGGGG\n";
+        let input = "CRANE\nGGGGG\nnext\nSLATE\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
         let mut interface = CliInterface::new(reader);
 
@@ -351,7 +351,7 @@ mod tests {
     #[test]
     fn test_game_loop_with_whitespace_in_input() {
         let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
-        let input = "  CRANE  \n  GGGGG  \n";
+        let input = "  CRANE  \n  GGGGG  \nexit\n";
         let reader = Cursor::new(input);
         let mut interface = CliInterface::new(reader);
 
@@ -403,7 +403,7 @@ mod tests {
             "FFFFF".to_string(),
         ];
         // Progressively narrow down candidates
-        let input = "AAAAA\nXXXXX\nBBBBB\nXXXXX\nCCCCC\nGGGGG\n";
+        let input = "AAAAA\nXXXXX\nBBBBB\nXXXXX\nCCCCC\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
         let mut interface = CliInterface::new(reader);
 
