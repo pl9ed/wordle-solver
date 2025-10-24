@@ -103,6 +103,7 @@ impl LetterState {
 enum TuiState {
     EnteringGuess,
     MarkingFeedback { marking_index: usize },
+    ConfirmingFeedback,
     Computing,
     WaitingForNext,
     GameOver { message: String },
@@ -422,6 +423,9 @@ impl TuiInterface {
             TuiState::MarkingFeedback { .. } => {
                 "G: Green (correct) | Y: Yellow (wrong position) | X: Gray (not in word) | BACKSPACE: Go back"
             }
+            TuiState::ConfirmingFeedback => {
+                "ENTER: Confirm feedback | BACKSPACE: Go back and edit"
+            }
             TuiState::Computing => "Computing optimal next guess...",
             TuiState::WaitingForNext => "Press any key to continue | ESC: Quit | CTRL+N: New Game",
             TuiState::GameOver { .. } => "ESC: Quit | CTRL+N: New Game",
@@ -527,6 +531,10 @@ impl TuiInterface {
                     TuiState::MarkingFeedback { .. } => {
                         debug_log!("handle_input() - Processing in MarkingFeedback state");
                         self.handle_feedback_input(key);
+                    }
+                    TuiState::ConfirmingFeedback => {
+                        debug_log!("handle_input() - Processing in ConfirmingFeedback state");
+                        self.handle_confirming_feedback_input(key);
                     }
                     TuiState::WaitingForNext | TuiState::GameOver { .. } => {
                         debug_log!("handle_input() - Processing in WaitingForNext/GameOver state");
@@ -666,6 +674,32 @@ impl TuiInterface {
         }
     }
 
+    fn handle_confirming_feedback_input(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                // Confirm the feedback and proceed
+                self.state = TuiState::WaitingForNext;
+                info_log!("handle_confirming_feedback_input() - Feedback confirmed");
+            }
+            KeyCode::Backspace => {
+                // Go back to editing the last letter
+                if let Some(last_guess) = self.guesses.last_mut() {
+                    last_guess.states[WORD_LENGTH - 1] = LetterState::Entered;
+                    self.state = TuiState::MarkingFeedback {
+                        marking_index: WORD_LENGTH - 1,
+                    };
+                    info_log!("handle_confirming_feedback_input() - Going back to edit last letter");
+                }
+            }
+            _ => {
+                debug_log!(
+                    "handle_confirming_feedback_input() - Ignoring key: {:?}",
+                    key.code
+                );
+            }
+        }
+    }
+
     fn has_modifier_keys(key: &KeyEvent) -> bool {
         key.modifiers.contains(event::KeyModifiers::ALT)
             || key.modifiers.contains(event::KeyModifiers::CONTROL)
@@ -677,7 +711,7 @@ impl TuiInterface {
                 marking_index: current_index + 1,
             };
         } else {
-            self.state = TuiState::WaitingForNext;
+            self.state = TuiState::ConfirmingFeedback;
         }
     }
 
@@ -769,6 +803,11 @@ impl GameInterface for TuiInterface {
         }
 
         loop {
+            // Update status if we're in confirming state
+            if matches!(self.state, TuiState::ConfirmingFeedback) {
+                self.status = "Press ENTER to confirm feedback".to_string();
+            }
+
             // Use handle_input which now properly handles state-based input
             match self.handle_input() {
                 Ok(Some(action)) => {
@@ -782,7 +821,7 @@ impl GameInterface for TuiInterface {
                     }
                 }
                 Ok(None) => {
-                    // Check if we've finished marking
+                    // Check if we've finished marking and confirmed
                     if matches!(self.state, TuiState::WaitingForNext) {
                         self.status = "Feedback recorded".to_string();
                         let _ = self.draw();
