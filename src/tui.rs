@@ -1,5 +1,19 @@
+//! TUI (Terminal User Interface) module for Wordle Solver
+//!
+//! This module provides an interactive terminal interface using Ratatui.
+//!
+//! # Architecture
+//! - `TuiInterface`: Core UI component handling rendering and input
+//! - `TuiWrapper`: Wrapper that integrates with game loop
+//!
+//! # State Machine
+//! The UI follows these state transitions:
+//! - `EnteringGuess` → `MarkingFeedback` → `ConfirmingFeedback` → `WaitingForNext` → back to `EnteringGuess`
+//! - Terminal states: `Computing`, `GameOver`
+
 use crate::game_state::{GameInterface, Recommendation, StartingWordsInfo, UserAction};
 use crate::solver::Feedback;
+use crate::{debug_log, info_log};
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent},
@@ -16,39 +30,22 @@ use ratatui::{
 };
 use std::io;
 
-// Conditional logging macros - only active in debug builds
-#[cfg(debug_assertions)]
-macro_rules! debug_log {
-    ($($arg:tt)*) => {
-        log::debug!($($arg)*);
-    };
-}
-
-#[cfg(not(debug_assertions))]
-macro_rules! debug_log {
-    ($($arg:tt)*) => {{}};
-}
-
-#[cfg(debug_assertions)]
-macro_rules! info_log {
-    ($($arg:tt)*) => {
-        log::info!($($arg)*);
-    };
-}
-
-#[cfg(not(debug_assertions))]
-macro_rules! info_log {
-    ($($arg:tt)*) => {{}};
-}
-
 const MAX_GUESSES: usize = 6;
 const WORD_LENGTH: usize = 5;
 const MAX_CANDIDATES_DISPLAY: usize = 10;
 const EVENT_POLL_TIMEOUT_MS: u64 = 100;
 const COMPUTING_POLL_TIMEOUT_MS: u64 = 10;
 const ROW_SPACING: u16 = 2;
+const ASCII_CONTROL_CHAR_THRESHOLD: u32 = 32;
 
-#[derive(Clone, Copy, PartialEq)]
+// Style constants for consistent UI
+const HEADER_STYLE: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+const ERROR_STYLE: Style = Style::new().fg(Color::Red);
+const SUCCESS_STYLE: Style = Style::new().fg(Color::Green).add_modifier(Modifier::BOLD);
+const INFO_STYLE: Style = Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+const MESSAGE_STYLE: Style = Style::new().fg(Color::Cyan);
+
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum LetterState {
     Empty,
     Entered,
@@ -57,6 +54,7 @@ enum LetterState {
     NoMatch,      // Gray
 }
 
+#[derive(Debug)]
 struct GuessRow {
     letters: [char; 5],
     states: [LetterState; 5],
@@ -81,7 +79,7 @@ impl GuessRow {
 }
 
 impl LetterState {
-    fn colors(&self) -> (Color, Color) {
+    fn colors(self) -> (Color, Color) {
         match self {
             Self::Empty | Self::Entered => (Color::DarkGray, Color::White),
             Self::Match => (Color::Green, Color::Black),
@@ -102,13 +100,32 @@ impl LetterState {
 #[derive(Debug)]
 enum TuiState {
     EnteringGuess,
-    MarkingFeedback { marking_index: usize },
+    MarkingFeedback {
+        marking_index: usize,
+    },
     ConfirmingFeedback,
     Computing,
     WaitingForNext,
-    GameOver { message: String },
+    /// Game has ended (solution found or no candidates) - message stored in interface.message
+    GameOver,
 }
 
+/// Context for rendering the UI - groups related parameters to avoid too many function arguments.
+struct RenderContext<'a> {
+    guesses: &'a [GuessRow],
+    current_input: &'a str,
+    state: &'a TuiState,
+    candidates_display: &'a [String],
+    recommendation: Option<&'a Recommendation>,
+    starting_words: &'a [String],
+    message: &'a str,
+    error_message: &'a str,
+    status: &'a str,
+}
+
+/// Main TUI interface component.
+///
+/// Manages terminal rendering, input handling, and game state display.
 pub struct TuiInterface {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     guesses: Vec<GuessRow>,
@@ -158,37 +175,42 @@ impl TuiInterface {
         Ok(())
     }
 
+    /// Draw the current UI state to the terminal.
+    ///
+    /// Returns an error if rendering fails.
     fn draw(&mut self) -> Result<(), io::Error> {
+        let ctx = RenderContext {
+            guesses: &self.guesses,
+            current_input: &self.current_input,
+            state: &self.state,
+            candidates_display: &self.candidates_display,
+            recommendation: self.recommendation.as_ref(),
+            starting_words: &self.starting_words,
+            message: &self.message,
+            error_message: &self.error_message,
+            status: &self.status,
+        };
+
         self.terminal.draw(|f| {
-            Self::render_static(
-                f,
-                &self.guesses,
-                &self.current_input,
-                &self.state,
-                &self.candidates_display,
-                self.recommendation.as_ref(),
-                &self.starting_words,
-                &self.message,
-                &self.error_message,
-                &self.status,
-            );
+            Self::render_static(f, &ctx);
         })?;
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn render_static(
-        f: &mut Frame,
-        guesses: &[GuessRow],
-        current_input: &str,
-        state: &TuiState,
-        candidates_display: &[String],
-        recommendation: Option<&Recommendation>,
-        starting_words: &[String],
-        message: &str,
-        error_message: &str,
-        status: &str,
-    ) {
+    /// Helper method to check if current input should be displayed
+    fn should_show_current_input(&self) -> bool {
+        matches!(self.state, TuiState::EnteringGuess) && self.guesses.len() < MAX_GUESSES
+    }
+
+    /// Log and handle draw errors appropriately
+    fn draw_or_log(&mut self) {
+        if let Err(e) = self.draw() {
+            debug_log!("Draw error: {}", e);
+        }
+    }
+
+    /// Render the complete UI layout using the provided context.
+    fn render_static(f: &mut Frame, ctx: &RenderContext) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -201,27 +223,23 @@ impl TuiInterface {
             .split(f.area());
 
         Self::render_title(f, chunks[0]);
-        Self::render_board(f, chunks[1], guesses, current_input, state);
+        Self::render_board(f, chunks[1], ctx.guesses, ctx.current_input, ctx.state);
         Self::render_info(
             f,
             chunks[2],
-            candidates_display,
-            recommendation,
-            starting_words,
-            message,
-            error_message,
+            ctx.candidates_display,
+            ctx.recommendation,
+            ctx.starting_words,
+            ctx.message,
+            ctx.error_message,
         );
-        Self::render_status(f, chunks[3], status);
-        Self::render_instructions(f, chunks[4], state);
+        Self::render_status(f, chunks[3], ctx.status);
+        Self::render_instructions(f, chunks[4], ctx.state);
     }
 
     fn render_title(f: &mut Frame, area: Rect) {
         let title = Paragraph::new("WORDLE SOLVER")
-            .style(
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )
+            .style(HEADER_STYLE)
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(title, area);
     }
@@ -245,7 +263,8 @@ impl TuiInterface {
         let available_rows = (inner.height / ROW_SPACING) as usize;
 
         // Determine if we need to show current input
-        let showing_current_input = matches!(state, TuiState::EnteringGuess) && guesses.len() < MAX_GUESSES;
+        let showing_current_input =
+            matches!(state, TuiState::EnteringGuess) && guesses.len() < MAX_GUESSES;
         let rows_needed = if showing_current_input {
             guesses.len() + 1
         } else {
@@ -253,18 +272,19 @@ impl TuiInterface {
         };
 
         // Calculate which guesses to show (prioritize most recent)
-        let skip_count = if rows_needed > available_rows {
-            rows_needed - available_rows
-        } else {
-            0
-        };
+        let skip_count = rows_needed.saturating_sub(available_rows);
 
         // Render visible guesses (skip oldest ones if needed)
-        for (display_index, (i, guess)) in guesses.iter().enumerate().skip(skip_count).enumerate() {
-            if i >= MAX_GUESSES {
-                break;
-            }
-            Self::render_guess_row(f, guess, display_index, inner, state, guesses.len());
+        // Fixed: Remove confusing double enumerate - display_index is now clear
+        for (display_index, guess) in guesses.iter().skip(skip_count).enumerate() {
+            Self::render_guess_row(
+                f,
+                guess,
+                display_index,
+                inner,
+                state,
+                guesses.len() - skip_count,
+            );
         }
 
         // Render current input if entering a guess
@@ -366,9 +386,7 @@ impl TuiInterface {
         if !starting_words.is_empty() {
             lines.push(Line::from(vec![Span::styled(
                 "Suggested Starting Words:",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                HEADER_STYLE,
             )]));
             for (i, word) in starting_words.iter().take(3).enumerate() {
                 let num = i + 1;
@@ -389,9 +407,7 @@ impl TuiInterface {
                     "Recommended: {} (score: {:.2}) [{}]",
                     rec.guess, rec.score, category
                 ),
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
+                SUCCESS_STYLE,
             )]));
             lines.push(Line::from(""));
         }
@@ -400,9 +416,7 @@ impl TuiInterface {
         if !candidates_display.is_empty() {
             lines.push(Line::from(vec![Span::styled(
                 format!("Possible candidates ({}):", candidates_display.len()),
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
+                INFO_STYLE,
             )]));
             for word in candidates_display.iter().take(MAX_CANDIDATES_DISPLAY) {
                 lines.push(Line::from(format!("  {word}")));
@@ -418,18 +432,12 @@ impl TuiInterface {
 
         // Messages
         if !message.is_empty() {
-            lines.push(Line::from(vec![Span::styled(
-                message,
-                Style::default().fg(Color::Cyan),
-            )]));
+            lines.push(Line::from(vec![Span::styled(message, MESSAGE_STYLE)]));
         }
 
         // Error messages
         if !error_message.is_empty() {
-            lines.push(Line::from(vec![Span::styled(
-                error_message,
-                Style::default().fg(Color::Red),
-            )]));
+            lines.push(Line::from(vec![Span::styled(error_message, ERROR_STYLE)]));
         }
 
         let paragraph = Paragraph::new(lines)
@@ -440,18 +448,14 @@ impl TuiInterface {
 
     fn render_instructions(f: &mut Frame, area: Rect, state: &TuiState) {
         let text = match state {
-            TuiState::EnteringGuess => {
-                "Type your 5-letter guess | ENTER: Submit | ESC: Quit"
-            }
+            TuiState::EnteringGuess => "Type your 5-letter guess | ENTER: Submit | ESC: Quit",
             TuiState::MarkingFeedback { .. } => {
                 "G: Green (correct) | Y: Yellow (wrong position) | X: Gray (not in word) | BACKSPACE: Go back"
             }
-            TuiState::ConfirmingFeedback => {
-                "ENTER: Confirm feedback | BACKSPACE: Go back and edit"
-            }
+            TuiState::ConfirmingFeedback => "ENTER: Confirm feedback | BACKSPACE: Go back and edit",
             TuiState::Computing => "Computing optimal next guess...",
             TuiState::WaitingForNext => "Press any key to continue | ESC: Quit",
-            TuiState::GameOver { .. } => "N: New Game | ESC: Quit",
+            TuiState::GameOver => "N: New Game | ESC: Quit",
         };
 
         let paragraph = Paragraph::new(text)
@@ -463,11 +467,7 @@ impl TuiInterface {
     fn render_status(f: &mut Frame, area: Rect, status: &str) {
         let status_text = if status.is_empty() { "Ready" } else { status };
         let paragraph = Paragraph::new(status_text)
-            .style(
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )
+            .style(HEADER_STYLE)
             .block(Block::default().borders(Borders::ALL).title("Status"));
         f.render_widget(paragraph, area);
     }
@@ -532,7 +532,12 @@ impl TuiInterface {
                 if let KeyCode::Char(c) = key.code {
                     // Ignore replacement characters, control characters, and other non-printable chars
                     // that might come from escape sequences when alt-tabbing
-                    if c == '\u{FFFD}' || (c as u32) < 32 && c != '\t' && c != '\n' && c != '\r' {
+                    if c == '\u{FFFD}'
+                        || (c as u32) < ASCII_CONTROL_CHAR_THRESHOLD
+                            && c != '\t'
+                            && c != '\n'
+                            && c != '\r'
+                    {
                         debug_log!(
                             "handle_input() - Ignoring invalid character from escape sequence: {:?}",
                             c
@@ -563,9 +568,9 @@ impl TuiInterface {
                         debug_log!("handle_input() - Processing in WaitingForNext state");
                         return Ok(self.handle_waiting_input(key));
                     }
-                    TuiState::GameOver { .. } => {
+                    TuiState::GameOver => {
                         debug_log!("handle_input() - Processing in GameOver state");
-                        return Ok(self.handle_game_over_input(key));
+                        return Ok(Self::handle_game_over_input(key));
                     }
                     TuiState::Computing => {}
                 }
@@ -721,7 +726,9 @@ impl TuiInterface {
                     self.state = TuiState::MarkingFeedback {
                         marking_index: WORD_LENGTH - 1,
                     };
-                    info_log!("handle_confirming_feedback_input() - Going back to edit last letter");
+                    info_log!(
+                        "handle_confirming_feedback_input() - Going back to edit last letter"
+                    );
                 }
                 None
             }
@@ -756,16 +763,15 @@ impl TuiInterface {
     }
 
     fn handle_waiting_input(&mut self, key: KeyEvent) -> Option<UserAction> {
-        match key.code {
-            KeyCode::Esc => Some(UserAction::Exit),
-            _ => {
-                self.state = TuiState::EnteringGuess;
-                None
-            }
+        if key.code == KeyCode::Esc {
+            Some(UserAction::Exit)
+        } else {
+            self.state = TuiState::EnteringGuess;
+            None
         }
     }
 
-    fn handle_game_over_input(&mut self, key: KeyEvent) -> Option<UserAction> {
+    fn handle_game_over_input(key: KeyEvent) -> Option<UserAction> {
         match key.code {
             KeyCode::Char('n' | 'N') => Some(UserAction::NewGame),
             KeyCode::Esc => Some(UserAction::Exit),
@@ -784,14 +790,20 @@ impl TuiInterface {
         Some(feedback)
     }
 
-    fn wait_for_user_input(&mut self) {
-        let _ = self.draw();
-        loop {
-            if let Ok(Some(_)) = self.handle_input() {
-                break;
-            }
-            let _ = self.draw();
-        }
+    /// Transition to the `MarkingFeedback` state
+    fn transition_to_marking_feedback(&mut self, guess: &str) {
+        self.state = TuiState::MarkingFeedback { marking_index: 0 };
+        self.status = format!("Guess entered: {guess} - Now mark feedback");
+    }
+
+    /// Transition to the `EnteringGuess` state
+    fn transition_to_entering_guess(&mut self) {
+        self.state = TuiState::EnteringGuess;
+    }
+
+    /// Transition to the `GameOver` state
+    fn transition_to_game_over(&mut self) {
+        self.state = TuiState::GameOver;
     }
 }
 
@@ -802,7 +814,7 @@ impl GameInterface for TuiInterface {
             self.message = format!("Suggested starting word: {}", info.words[0]);
         }
         self.status = "Ready - Enter your first 5-letter guess".to_string();
-        let _ = self.draw();
+        self.draw_or_log();
     }
 
     fn read_guess(&mut self) -> Option<UserAction> {
@@ -839,6 +851,7 @@ impl GameInterface for TuiInterface {
 
         // Draw once before entering loop to show the updated state
         if self.draw().is_err() {
+            debug_log!("read_feedback() - Initial draw failed");
             return None;
         }
 
@@ -864,15 +877,19 @@ impl GameInterface for TuiInterface {
                     // Check if we've finished marking and confirmed
                     if matches!(self.state, TuiState::WaitingForNext) {
                         self.status = "Feedback recorded".to_string();
-                        let _ = self.draw();
+                        self.draw_or_log();
                         return self.get_feedback_from_last_guess();
                     }
                 }
-                Err(_) => return None,
+                Err(e) => {
+                    debug_log!("read_feedback() - Input error: {}", e);
+                    return None;
+                }
             }
 
             // Redraw after each input
             if self.draw().is_err() {
+                debug_log!("read_feedback() - Draw failed in loop");
                 return None;
             }
         }
@@ -886,16 +903,16 @@ impl GameInterface for TuiInterface {
             self.state = TuiState::Computing;
         }
         self.status = format!("Filtering candidates... {} remaining", candidates.len());
-        let _ = self.draw();
+        self.draw_or_log();
     }
 
     fn display_recommendation(&mut self, recommendation: &Recommendation) {
         self.recommendation = Some(recommendation.clone());
-        self.state = TuiState::EnteringGuess;
+        self.transition_to_entering_guess();
         self.status = format!("Recommendation ready: {}", recommendation.guess);
         // Clear starting words once we have a recommendation from gameplay
         self.starting_words.clear();
-        let _ = self.draw();
+        self.draw_or_log();
     }
 
     fn display_computing_message(&mut self) {
@@ -903,32 +920,27 @@ impl GameInterface for TuiInterface {
         // The Computing state doesn't accept input which causes hangs
         self.message = "Computing optimal guess...".to_string();
         self.status = "Computing optimal next guess...".to_string();
-        let _ = self.draw();
+        self.draw_or_log();
     }
 
     fn display_no_candidates_message(&mut self) {
-        self.state = TuiState::GameOver {
-            message: "No candidates remain. Check your inputs.".to_string(),
-        };
+        self.transition_to_game_over();
         self.message = "No candidates remain. Check your inputs.".to_string();
         self.status = "Error: No valid candidates found".to_string();
-        let _ = self.draw();
+        self.draw_or_log();
     }
 
     fn display_solution_found(&mut self, solution: &str) {
-        self.state = TuiState::GameOver {
-            message: format!("Solution found: {solution}"),
-        };
+        self.transition_to_game_over();
         self.message = format!("✓ Solution found: {solution}");
         self.status = format!("Game Over - Solution: {solution}");
-        let _ = self.draw();
+        self.draw_or_log();
     }
-
 
     fn display_exit_message(&mut self) {
         self.message = "Exiting...".to_string();
         self.status = "Exiting application...".to_string();
-        let _ = self.draw();
+        self.draw_or_log();
     }
 
     fn display_new_game_message(&mut self, word_count: usize) {
@@ -936,11 +948,11 @@ impl GameInterface for TuiInterface {
         self.current_input.clear();
         self.candidates_display.clear();
         self.recommendation = None;
-        self.state = TuiState::EnteringGuess;
+        self.transition_to_entering_guess();
         self.message = format!("New game started. Loaded {word_count} words.");
         self.status = "New game - Enter your first guess".to_string();
         self.error_message.clear();
-        let _ = self.draw();
+        self.draw_or_log();
     }
 }
 
@@ -982,7 +994,7 @@ impl GameInterface for TuiWrapper {
     fn read_guess(&mut self) -> Option<UserAction> {
         info_log!("TuiWrapper::read_guess() - Called");
         self.interface.status = "Waiting for guess...".to_string();
-        let _ = self.interface.draw();
+        self.interface.draw_or_log();
 
         let action = self.interface.read_guess();
         info_log!("TuiWrapper::read_guess() - Received action: {:?}", action);
@@ -992,11 +1004,10 @@ impl GameInterface for TuiWrapper {
             info_log!("TuiWrapper::read_guess() - Recording guess: '{}'", guess);
             self.interface.record_guess(guess);
             // Transition to MarkingFeedback state immediately to prevent showing next empty row
-            self.interface.state = TuiState::MarkingFeedback { marking_index: 0 };
-            self.interface.status = format!("Guess entered: {guess} - Now mark feedback");
+            self.interface.transition_to_marking_feedback(guess);
             // Redraw to show the guess before asking for feedback
             // Note: draw() is synchronous and blocks until rendering is complete
-            let _ = self.interface.draw();
+            self.interface.draw_or_log();
             info_log!("TuiWrapper::read_guess() - Guess recorded and displayed");
         }
         action

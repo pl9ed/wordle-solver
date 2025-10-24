@@ -1,5 +1,7 @@
 mod cli;
 mod game_state;
+#[macro_use]
+mod logging;
 mod solver;
 mod tui;
 mod wordbank;
@@ -9,31 +11,6 @@ use game_state::game_loop;
 use std::io;
 use tui::TuiWrapper;
 use wordbank::load_wordbank;
-
-// Conditional logging macros - only active in debug builds
-#[cfg(debug_assertions)]
-macro_rules! debug_log {
-    ($($arg:tt)*) => {
-        log::debug!($($arg)*);
-    };
-}
-
-#[cfg(not(debug_assertions))]
-macro_rules! debug_log {
-    ($($arg:tt)*) => {{}};
-}
-
-#[cfg(debug_assertions)]
-macro_rules! info_log {
-    ($($arg:tt)*) => {
-        log::info!($($arg)*);
-    };
-}
-
-#[cfg(not(debug_assertions))]
-macro_rules! info_log {
-    ($($arg:tt)*) => {{}};
-}
 
 fn main() {
     // Initialize logger only in debug builds
