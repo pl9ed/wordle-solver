@@ -3,6 +3,7 @@
 
 pub mod cli;
 pub mod game_state;
+pub mod logging;
 pub mod solver;
 pub mod wordbank;
 

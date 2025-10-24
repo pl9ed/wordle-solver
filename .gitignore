@@ -19,3 +19,6 @@ Thumbs.db
 # Other common Rust artifacts
 **/*.rmeta
 **/*.d
+
+# logs
+**/output.txt

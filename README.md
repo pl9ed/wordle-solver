@@ -1,6 +1,6 @@
-# Wordle Solver CLI
+# Wordle Solver
 
-A command-line Wordle solver written in Rust that helps you solve Wordle puzzles optimally.
+Vibe coded wordle solver to experiment with GenAI tools.
 
 ## Table of Contents
 

@@ -2,16 +2,7 @@ use crate::solver::{
     Feedback, best_information_guess, compute_best_starting_words, filter_candidates,
 };
 use crate::wordbank::{get_wordle_start_path, read_starting_words, write_starting_words};
-use std::io::BufRead;
 use std::path::PathBuf;
-
-fn is_valid_word(word: &str) -> bool {
-    word.len() == 5 && word.chars().all(|c| c.is_ascii_alphabetic())
-}
-
-fn is_valid_feedback(feedback: &str) -> bool {
-    feedback.len() == 5 && feedback.chars().all(|c| c == 'G' || c == 'Y' || c == 'X')
-}
 
 enum GameState {
     Continue,
@@ -19,51 +10,126 @@ enum GameState {
     NoSolution,
 }
 
-enum GuessInput {
-    Valid(String),
-    Invalid,
+/// User action from input
+#[derive(Debug)]
+pub enum UserAction {
+    Guess(String),
     Exit,
     NewGame,
 }
 
-pub fn game_loop<R: BufRead>(initial_wordbank: &[String], mut reader: R) {
+/// Information about starting words to display
+pub struct StartingWordsInfo {
+    pub words: Vec<String>,
+    pub used_cache: bool,
+    pub cache_path: Option<PathBuf>,
+}
+
+/// Recommendation for the next guess
+#[derive(Clone)]
+pub struct Recommendation {
+    pub guess: String,
+    pub score: f64,
+    pub is_candidate: bool,
+}
+
+/// Trait that abstracts the UI layer from game logic
+/// Implement this trait for different UIs: CLI, TUI, GUI, API, etc.
+pub trait GameInterface {
+    /// Display the optimal starting words
+    fn display_starting_words(&mut self, info: &StartingWordsInfo);
+
+    /// Read the user's guess, returns None if input was invalid and should retry
+    fn read_guess(&mut self) -> Option<UserAction>;
+
+    /// Read feedback for a guess, returns None if input was invalid and should retry
+    fn read_feedback(&mut self) -> Option<Vec<Feedback>>;
+
+    /// Display the current candidate words
+    fn display_candidates(&mut self, candidates: &[String]);
+
+    /// Display a recommendation for the next guess
+    fn display_recommendation(&mut self, recommendation: &Recommendation);
+
+    /// Display a message when computing
+    fn display_computing_message(&mut self);
+
+    /// Display a message when no candidates remain
+    fn display_no_candidates_message(&mut self);
+
+    /// Display the solution when found
+    fn display_solution_found(&mut self, solution: &str);
+
+    /// Display exit message
+    fn display_exit_message(&mut self);
+
+    /// Display new game started message
+    fn display_new_game_message(&mut self, word_count: usize);
+}
+
+pub fn game_loop<I: GameInterface>(initial_wordbank: &[String], interface: &mut I) {
     let start_path = get_wordle_start_path();
     let (starting_words, used_cache) =
         load_or_compute_starting_words(initial_wordbank, start_path.as_ref());
-    display_starting_words(&starting_words, used_cache, start_path.as_ref());
+
+    let info = StartingWordsInfo {
+        words: starting_words.clone(),
+        used_cache,
+        cache_path: start_path.clone(),
+    };
+    interface.display_starting_words(&info);
 
     let mut candidates = initial_wordbank.to_vec();
 
     loop {
-        let guess = match read_guess(&mut reader) {
-            GuessInput::Exit => {
-                println!("Exiting.");
+        let action = loop {
+            if let Some(action) = interface.read_guess() {
+                break action;
+            }
+        };
+
+        match action {
+            UserAction::Exit => {
+                interface.display_exit_message();
                 break;
             }
-            GuessInput::NewGame => {
+            UserAction::NewGame => {
                 candidates = initial_wordbank.to_vec();
-                println!("New game started. Loaded {} words.", candidates.len());
-                display_starting_words(&starting_words, true, start_path.as_ref());
-                continue;
+                interface.display_new_game_message(candidates.len());
+                let info = StartingWordsInfo {
+                    words: starting_words.clone(),
+                    used_cache: true,
+                    cache_path: start_path.clone(),
+                };
+                interface.display_starting_words(&info);
             }
-            GuessInput::Valid(g) => g,
-            GuessInput::Invalid => continue,
-        };
+            UserAction::Guess(guess) => {
+                let feedback = loop {
+                    if let Some(fb) = interface.read_feedback() {
+                        break fb;
+                    }
+                };
 
-        let Some(feedback) = read_feedback(&mut reader) else {
-            continue;
-        };
+                candidates = filter_candidates(&candidates, &guess, &feedback);
+                interface.display_candidates(&candidates);
 
-        candidates = filter_candidates(&candidates, &guess, &feedback);
-        display_candidates(&candidates);
-
-        match check_game_state(&candidates) {
-            GameState::Solved | GameState::NoSolution => break,
-            GameState::Continue => {
-                println!("Computing optimal guess, please wait...");
-                let (info_guess, info_score, is_candidate) =
-                    best_information_guess(initial_wordbank, &candidates);
-                display_recommendation(info_guess, info_score, is_candidate);
+                match check_game_state(&candidates, interface) {
+                    GameState::Solved | GameState::NoSolution => {
+                        // Don't break, let the loop continue so user can start a new game
+                        // The game is now in GameOver state and will wait for N or ESC
+                    }
+                    GameState::Continue => {
+                        interface.display_computing_message();
+                        let (info_guess, info_score, is_candidate) =
+                            best_information_guess(initial_wordbank, &candidates);
+                        let recommendation = Recommendation {
+                            guess: info_guess.to_string(),
+                            score: info_score,
+                            is_candidate,
+                        };
+                        interface.display_recommendation(&recommendation);
+                    }
+                }
             }
         }
     }
@@ -89,94 +155,24 @@ fn load_or_compute_starting_words(
     (words, false)
 }
 
-fn display_starting_words(words: &[String], used_cache: bool, cache_path: Option<&PathBuf>) {
-    println!("Optimal starting words:");
-    for (i, word) in words.iter().enumerate() {
-        println!("{}. {}", i + 1, word);
-    }
-
-    if let Some(path) = cache_path {
-        if used_cache {
-            println!("(Loaded from cache: {}.)", path.display());
-        } else {
-            println!("(Computed and cached to: {}.)", path.display());
-        }
-    }
-
-    if !words.is_empty() {
-        println!("Suggested starting word: {}", words[0]);
-    }
-}
-
-fn read_guess<R: BufRead>(reader: &mut R) -> GuessInput {
-    println!("\nEnter your guess (5 letters, or 'exit' to quit, or 'next' to start a new game):");
-    let mut input = String::new();
-    reader.read_line(&mut input).unwrap();
-    let input = input.trim().to_uppercase();
-
-    match input.as_str() {
-        "EXIT" => GuessInput::Exit,
-        "NEXT" => GuessInput::NewGame,
-        _ if is_valid_word(&input) => GuessInput::Valid(input),
-        _ => {
-            println!("Invalid guess. Please enter 5 letters.");
-            GuessInput::Invalid
-        }
-    }
-}
-
-fn read_feedback<R: BufRead>(reader: &mut R) -> Option<Vec<Feedback>> {
-    println!("Enter feedback (G=green, Y=yellow, X=gray, e.g. GYXXG):");
-    let mut input = String::new();
-    reader.read_line(&mut input).unwrap();
-    let input = input.trim().to_uppercase();
-
-    if is_valid_feedback(&input) {
-        let feedback: Option<Vec<Feedback>> = input.chars().map(Feedback::from_char).collect();
-
-        if feedback.is_none() {
-            println!("Invalid feedback. Please enter 5 characters using G, Y, or X.");
-        }
-        feedback
-    } else {
-        println!("Invalid feedback. Please enter 5 characters using G, Y, or X.");
-        None
-    }
-}
-
-fn display_candidates(candidates: &[String]) {
-    println!("Possible candidates ({})", candidates.len());
-    for word in candidates.iter().take(5) {
-        println!("{word}");
-    }
-}
-
-fn check_game_state(candidates: &[String]) -> GameState {
+fn check_game_state<I: GameInterface>(candidates: &[String], interface: &mut I) -> GameState {
     match candidates.len() {
         0 => {
-            println!("No candidates remain. Check your inputs.");
+            interface.display_no_candidates_message();
             GameState::NoSolution
         }
         1 => {
-            println!("Solution found: {}", candidates[0]);
+            interface.display_solution_found(&candidates[0]);
             GameState::Solved
         }
         _ => GameState::Continue,
     }
 }
 
-fn display_recommendation(guess: &str, score: f64, is_candidate: bool) {
-    let category = if is_candidate {
-        "solution candidate"
-    } else {
-        "information-gathering"
-    };
-    println!("Recommended guess: {guess} (expected pool size {score:.2}) [{category}]");
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::CliInterface;
     use std::io::Cursor;
 
     #[test]
@@ -188,9 +184,10 @@ mod tests {
         ];
         let input = "exit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should not panic and should exit gracefully
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -202,9 +199,10 @@ mod tests {
         ];
         let input = "abc\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should handle invalid input and then exit
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -216,9 +214,10 @@ mod tests {
         ];
         let input = "next\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should start new game and then exit
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -228,11 +227,12 @@ mod tests {
             "SLATE".to_string(),
             "RAISE".to_string(),
         ];
-        let input = "CRANE\nINVALID\nexit\n";
+        let input = "CRANE\nINVALID\nXXXXX\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should reject invalid feedback and continue
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -242,11 +242,13 @@ mod tests {
             "SLATE".to_string(),
             "RAISE".to_string(),
         ];
-        let input = "CRANE\nGGG\nexit\n";
+        // After short feedback, provide valid feedback to complete the guess, then exit
+        let input = "CRANE\nGGG\nXXXXX\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should reject feedback that's not 5 characters
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -256,11 +258,12 @@ mod tests {
             "SLATE".to_string(),
             "RAISE".to_string(),
         ];
-        let input = "CRANE\nGGGGG\n";
+        let input = "CRANE\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should find the solution and exit
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -272,41 +275,45 @@ mod tests {
             "STARE".to_string(),
         ];
         // First guess eliminates some candidates, second guess finds solution
-        let input = "CRANE\nXXXXX\nSLATE\nGGGGG\n";
+        let input = "CRANE\nXXXXX\nSLATE\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
     fn test_game_loop_no_candidates_remain() {
         let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
         // Give feedback that eliminates all candidates
-        let input = "CRANE\nXXXXX\nSLATE\nXXXXX\n";
+        let input = "CRANE\nXXXXX\nSLATE\nXXXXX\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should detect no solution and exit
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
     fn test_game_loop_case_insensitive_guess() {
         let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
-        let input = "crane\nGGGGG\n";
+        let input = "crane\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should accept lowercase and convert to uppercase
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
     fn test_game_loop_case_insensitive_feedback() {
         let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
-        let input = "CRANE\nggggg\n";
+        let input = "CRANE\nggggg\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should accept lowercase feedback
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -319,10 +326,11 @@ mod tests {
             "SPARE".to_string(),
         ];
         // Give mixed feedback with greens, yellows, and grays
-        let input = "CRANE\nXYGXX\nSLATE\nGGGGG\n";
+        let input = "CRANE\nXYGXX\nSLATE\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -333,20 +341,22 @@ mod tests {
             "RAISE".to_string(),
         ];
         // Play one game, start new game, then exit
-        let input = "CRANE\nGGGGG\nnext\nSLATE\nGGGGG\n";
+        let input = "CRANE\nGGGGG\nnext\nSLATE\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
     fn test_game_loop_with_whitespace_in_input() {
         let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
-        let input = "  CRANE  \n  GGGGG  \n";
+        let input = "  CRANE  \n  GGGGG  \nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should trim whitespace from input
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -354,9 +364,10 @@ mod tests {
         let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
         let input = "CRANES\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should reject word that's too long
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -364,9 +375,10 @@ mod tests {
         let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
         let input = "CRAN\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should reject word that's too short
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -374,9 +386,10 @@ mod tests {
         let wordbank = vec!["CRANE".to_string(), "SLATE".to_string()];
         let input = "CR4NE\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
         // Should reject word with non-alphabetic characters
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 
     #[test]
@@ -390,9 +403,10 @@ mod tests {
             "FFFFF".to_string(),
         ];
         // Progressively narrow down candidates
-        let input = "AAAAA\nXXXXX\nBBBBB\nXXXXX\nCCCCC\nGGGGG\n";
+        let input = "AAAAA\nXXXXX\nBBBBB\nXXXXX\nCCCCC\nGGGGG\nexit\n";
         let reader = Cursor::new(input);
+        let mut interface = CliInterface::new(reader);
 
-        game_loop(&wordbank, reader);
+        game_loop(&wordbank, &mut interface);
     }
 }
