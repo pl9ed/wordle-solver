@@ -620,7 +620,7 @@ impl TuiInterface {
         None
     }
 
-    fn handle_feedback_input(&mut self, key: KeyEvent) {
+    fn handle_feedback_input(&mut self, key: KeyEvent) -> Option<UserAction> {
         if let TuiState::MarkingFeedback { marking_index } = self.state {
             // Ignore inputs with Alt or Control modifiers to prevent alt-tab issues
             if Self::has_modifier_keys(&key) {
@@ -628,12 +628,16 @@ impl TuiInterface {
                     "handle_feedback_input() - Ignoring input with modifier: {:?}",
                     key.modifiers
                 );
-                return;
+                return None;
             }
 
             let last_guess = self.guesses.last_mut().unwrap();
 
             match key.code {
+                KeyCode::Esc => {
+                    info_log!("handle_feedback_input() - ESC pressed, returning Exit");
+                    return Some(UserAction::Exit);
+                }
                 KeyCode::Char('g' | 'G') => {
                     last_guess.states[marking_index] = LetterState::Match;
                     self.advance_feedback_marking(marking_index);
@@ -672,14 +676,20 @@ impl TuiInterface {
                 }
             }
         }
+        None
     }
 
-    fn handle_confirming_feedback_input(&mut self, key: KeyEvent) {
+    fn handle_confirming_feedback_input(&mut self, key: KeyEvent) -> Option<UserAction> {
         match key.code {
+            KeyCode::Esc => {
+                info_log!("handle_confirming_feedback_input() - ESC pressed, returning Exit");
+                Some(UserAction::Exit)
+            }
             KeyCode::Enter => {
                 // Confirm the feedback and proceed
                 self.state = TuiState::WaitingForNext;
                 info_log!("handle_confirming_feedback_input() - Feedback confirmed");
+                None
             }
             KeyCode::Backspace => {
                 // Go back to editing the last letter
@@ -690,12 +700,14 @@ impl TuiInterface {
                     };
                     info_log!("handle_confirming_feedback_input() - Going back to edit last letter");
                 }
+                None
             }
             _ => {
                 debug_log!(
                     "handle_confirming_feedback_input() - Ignoring key: {:?}",
                     key.code
                 );
+                None
             }
         }
     }
@@ -956,6 +968,8 @@ impl GameInterface for TuiWrapper {
         if let Some(UserAction::Guess(ref guess)) = action {
             info_log!("TuiWrapper::read_guess() - Recording guess: '{}'", guess);
             self.interface.record_guess(guess);
+            // Transition to MarkingFeedback state immediately to prevent showing next empty row
+            self.interface.state = TuiState::MarkingFeedback { marking_index: 0 };
             self.interface.status = format!("Guess entered: {guess} - Now mark feedback");
             // Force a redraw to show the guess before asking for feedback
             let _ = self.interface.draw();
