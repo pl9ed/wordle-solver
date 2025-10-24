@@ -114,7 +114,10 @@ pub fn game_loop<I: GameInterface>(initial_wordbank: &[String], interface: &mut 
                 interface.display_candidates(&candidates);
 
                 match check_game_state(&candidates, interface) {
-                    GameState::Solved | GameState::NoSolution => break,
+                    GameState::Solved | GameState::NoSolution => {
+                        // Don't break, let the loop continue so user can start a new game
+                        // The game is now in GameOver state and will wait for N or ESC
+                    }
                     GameState::Continue => {
                         interface.display_computing_message();
                         let (info_guess, info_score, is_candidate) =

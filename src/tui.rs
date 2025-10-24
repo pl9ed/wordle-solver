@@ -418,7 +418,7 @@ impl TuiInterface {
     fn render_instructions(f: &mut Frame, area: Rect, state: &TuiState) {
         let text = match state {
             TuiState::EnteringGuess => {
-                "Type your 5-letter guess | ENTER: Submit | ESC: Quit | CTRL+N: New Game"
+                "Type your 5-letter guess | ENTER: Submit | ESC: Quit"
             }
             TuiState::MarkingFeedback { .. } => {
                 "G: Green (correct) | Y: Yellow (wrong position) | X: Gray (not in word) | BACKSPACE: Go back"
@@ -427,8 +427,8 @@ impl TuiInterface {
                 "ENTER: Confirm feedback | BACKSPACE: Go back and edit"
             }
             TuiState::Computing => "Computing optimal next guess...",
-            TuiState::WaitingForNext => "Press any key to continue | ESC: Quit | CTRL+N: New Game",
-            TuiState::GameOver { .. } => "ESC: Quit | CTRL+N: New Game",
+            TuiState::WaitingForNext => "Press any key to continue | ESC: Quit",
+            TuiState::GameOver { .. } => "N: New Game | ESC: Quit",
         };
 
         let paragraph = Paragraph::new(text)
@@ -536,9 +536,13 @@ impl TuiInterface {
                         debug_log!("handle_input() - Processing in ConfirmingFeedback state");
                         self.handle_confirming_feedback_input(key);
                     }
-                    TuiState::WaitingForNext | TuiState::GameOver { .. } => {
-                        debug_log!("handle_input() - Processing in WaitingForNext/GameOver state");
+                    TuiState::WaitingForNext => {
+                        debug_log!("handle_input() - Processing in WaitingForNext state");
                         return Ok(self.handle_waiting_input(key));
+                    }
+                    TuiState::GameOver { .. } => {
+                        debug_log!("handle_input() - Processing in GameOver state");
+                        return Ok(self.handle_game_over_input(key));
                     }
                     TuiState::Computing => {}
                 }
@@ -556,10 +560,6 @@ impl TuiInterface {
         );
 
         match key.code {
-            KeyCode::Char('n') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                info_log!("handle_guess_input() - CTRL+N pressed, returning NewGame");
-                return Some(UserAction::NewGame);
-            }
             KeyCode::Char(c) if c.is_ascii_alphabetic() && self.current_input.len() < 5 => {
                 // Ignore characters with Alt, Control, or other modifiers (Shift is ok for uppercase)
                 let has_alt = key.modifiers.contains(event::KeyModifiers::ALT);
@@ -722,14 +722,19 @@ impl TuiInterface {
 
     fn handle_waiting_input(&mut self, key: KeyEvent) -> Option<UserAction> {
         match key.code {
-            KeyCode::Char('n') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                Some(UserAction::NewGame)
-            }
             KeyCode::Esc => Some(UserAction::Exit),
             _ => {
                 self.state = TuiState::EnteringGuess;
                 None
             }
+        }
+    }
+
+    fn handle_game_over_input(&mut self, key: KeyEvent) -> Option<UserAction> {
+        match key.code {
+            KeyCode::Char('n' | 'N') => Some(UserAction::NewGame),
+            KeyCode::Esc => Some(UserAction::Exit),
+            _ => None,
         }
     }
 
@@ -872,7 +877,7 @@ impl GameInterface for TuiInterface {
         };
         self.message = "No candidates remain. Check your inputs.".to_string();
         self.status = "Error: No valid candidates found".to_string();
-        self.wait_for_user_input();
+        let _ = self.draw();
     }
 
     fn display_solution_found(&mut self, solution: &str) {
@@ -881,7 +886,7 @@ impl GameInterface for TuiInterface {
         };
         self.message = format!("✓ Solution found: {solution}");
         self.status = format!("Game Over - Solution: {solution}");
-        self.wait_for_user_input();
+        let _ = self.draw();
     }
 
 
