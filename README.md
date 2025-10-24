@@ -2,6 +2,8 @@
 
 Vibe coded wordle solver to experiment with GenAI tools.
 
+[example.webm](https://github.com/user-attachments/assets/97236fb0-84c0-4354-a2b7-578247ea5d67)
+
 ## Table of Contents
 
 - [Features](#features)
