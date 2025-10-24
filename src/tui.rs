@@ -241,17 +241,40 @@ impl TuiInterface {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        // Render each guess row
-        for (i, guess) in guesses.iter().enumerate() {
+        // Calculate how many rows can fit in the available space
+        let available_rows = (inner.height / ROW_SPACING) as usize;
+
+        // Determine if we need to show current input
+        let showing_current_input = matches!(state, TuiState::EnteringGuess) && guesses.len() < MAX_GUESSES;
+        let rows_needed = if showing_current_input {
+            guesses.len() + 1
+        } else {
+            guesses.len()
+        };
+
+        // Calculate which guesses to show (prioritize most recent)
+        let skip_count = if rows_needed > available_rows {
+            rows_needed - available_rows
+        } else {
+            0
+        };
+
+        // Render visible guesses (skip oldest ones if needed)
+        for (display_index, (i, guess)) in guesses.iter().enumerate().skip(skip_count).enumerate() {
             if i >= MAX_GUESSES {
                 break;
             }
-            Self::render_guess_row(f, guess, i, inner, state, guesses.len());
+            Self::render_guess_row(f, guess, display_index, inner, state, guesses.len());
         }
 
         // Render current input if entering a guess
-        if matches!(state, TuiState::EnteringGuess) && guesses.len() < MAX_GUESSES {
-            Self::render_current_input(f, guesses.len(), inner, current_input);
+        if showing_current_input {
+            let display_row = if rows_needed > available_rows {
+                available_rows - 1
+            } else {
+                guesses.len() - skip_count
+            };
+            Self::render_current_input(f, display_row, inner, current_input);
         }
     }
 
@@ -971,11 +994,9 @@ impl GameInterface for TuiWrapper {
             // Transition to MarkingFeedback state immediately to prevent showing next empty row
             self.interface.state = TuiState::MarkingFeedback { marking_index: 0 };
             self.interface.status = format!("Guess entered: {guess} - Now mark feedback");
-            // Force a redraw to show the guess before asking for feedback
+            // Redraw to show the guess before asking for feedback
+            // Note: draw() is synchronous and blocks until rendering is complete
             let _ = self.interface.draw();
-
-            // Give the terminal a moment to render
-            std::thread::sleep(std::time::Duration::from_millis(50));
             info_log!("TuiWrapper::read_guess() - Guess recorded and displayed");
         }
         action
